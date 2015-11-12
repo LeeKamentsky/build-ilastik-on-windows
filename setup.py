@@ -9,15 +9,18 @@ import sys
 import tarfile
 import zipfile
 
+is_win = sys.platform.startswith('win')
+
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
-        ("cmake", None, 
-         "Location of CMake executables")]
+        ("cmake", None, "Location of CMake executables")
+    ]
     
     def initialize_options(self):
         self.build_lib = None
         self.cmake = None
         self.source_dir = None
+        self.target_dir = None
         self.src_command = None
         self.extra_cmake_options = []
         
@@ -40,30 +43,43 @@ class BuildWithCMake(setuptools.Command):
             return []
         return [self.src_command]
     
+    def get_cmake_generator(self):
+        if is_win:
+            return "NMake Makefiles"
+        else:
+            return "Unix Makefules"
+        
+    def get_make_program(self):
+        if is_win:
+            return "nmake"
+        return "make"
+    
     def run(self):
         cmake_args = [
-            os.path.join(self.cmake, "cmake"),
-            self.source_dir] + self.extra_cmake_options
-        self.spawn(cmake_args)
-        self.spawn(["nmake"])
+            os.path.join(self.cmake, "cmake")]
+        cmake_args += ["-G", self.get_cmake_generator()]
+        cmake_args += self.extra_cmake_options
+        # I don't like changing directories. I can't see any way to make
+        # cmake build its makefiles in another directory
+        old_dir = os.path.abspath(os.curdir)
+        os.chdir(self.source_dir)
+        try:
+            self.spawn(cmake_args)
+            self.spawn([self.get_make_program()])
+        finally:
+            os.chdir(old_dir)
         
-    def spawn(self, *args):
+    def spawn(self, args):
         '''Spawn a process using the correct compile environment'''
         if sys.platform.startswith('win'):
-            if not hasattr(self, 'msvccompiler'):
-                from distutils.msvccompiler import MSVCCompiler
-                self.msvccompiler = MSVCCompiler(
-                    verbose = self.verbose,
-                    dry_run = self.dry_run,
-                    force = self.force)
-                self.msvccompiler.initialize()
-            executable = args[0]
-            if not executable.lower().endswith('.exe'):
-                executable += '.exe'
-            executable = self.msvccompiler.find_exe(executable)
-            args = [executable] + args[1:]
+            if not hasattr(self, 'vcvarsall'):
+                from distutils.msvc9compiler \
+                     import find_vcvarsall, get_build_version
+                self.vcvarsall = find_vcvarsall(get_build_version())
+            if self.vcvarsall is not None:
+                args = [self.vcvarsall] + args
         return distutils.spawn.spawn(
-            executable, verbose = self.verbose, dry_run=self.dry_run)
+            args, verbose = self.verbose, dry_run=self.dry_run)
 
 class FetchSZipSource(setuptools.Command):
     command_name = "fetch_szip"
@@ -181,7 +197,9 @@ try:
     setuptools.setup(
         cmdclass=command_classes,
         options = {
-            'build_zlib': dict(src_command=FetchZlibSource.command_name)
+            'build_zlib': dict(
+                src_command=FetchZlibSource.command_name,
+                extra_cmake_options = ["-DBUILD_SHARED_LIBS:BOOL=\"1\""])
             }
     )
 except:
