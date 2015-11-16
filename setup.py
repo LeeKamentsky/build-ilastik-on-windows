@@ -685,9 +685,9 @@ class BuildIlastik(distutils.command.build.build):
          ('install_ilastik', None)]
     
     if is_win:
-        sub_commands.append('fetch_fftw_binaries')
+        sub_commands.append(('fetch_fftw_binaries', None))
     else:
-        sub_commands += [('fetch_fftw', None), ('build_fftw')]
+        sub_commands += [('fetch_fftw', None), ('build_fftw', None)]
     sub_commands += [         
          ('fetch_vigra', None)]
     
@@ -705,7 +705,7 @@ try:
     command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_boost'] = BuildBoost
     command_classes['build_vigra'] = BuildVigra
-    setuptools.setup(
+    result = setuptools.setup(
         cmdclass=command_classes,
         options = {
             'build_zlib': dict(
@@ -736,6 +736,8 @@ try:
             )
             }
     )
+    sys.exit(result)
 except:
     import traceback
     traceback.print_exc()
+    sys.exit(1)
