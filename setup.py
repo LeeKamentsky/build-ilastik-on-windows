@@ -29,8 +29,10 @@ import zipfile
 
 is_win = sys.platform.startswith('win')
 if is_win:
-    from distutils.msvc9compiler \
-         import find_vcvarsall, get_build_version
+    from distutils.msvc9compiler import \
+         find_vcvarsall, get_build_version, PLAT_TO_VCVARS,\
+         get_platform
+    vcplat = PLAT_TO_VCVARS[get_platform()]
     
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
@@ -126,11 +128,9 @@ class BuildWithCMake(setuptools.Command):
         '''Spawn a process using the correct compile environment'''
         if sys.platform.startswith('win'):
             if not hasattr(self, 'vcvarsall'):
-                from distutils.msvc9compiler \
-                     import find_vcvarsall, get_build_version
                 self.vcvarsall = find_vcvarsall(get_build_version())
             if self.vcvarsall is not None:
-                args = ['"%s"' % self.vcvarsall] + args
+                args = ['"%s"' % self.vcvarsall, vcplat] + args
         return distutils.spawn.spawn(
             args, verbose = self.verbose, dry_run=self.dry_run)
 
@@ -351,7 +351,8 @@ class FetchFFTWWindowsBinaries(setuptools.Command):
                     "/def:%s.def" % os.path.join(self.install_dir, libname),
                     "/out:%s.lib" % os.path.join(self.install_dir, libname)]
             if vcvarsall is not None:
-                args.insert('"%"' % vcvarsall, 0)
+                args.insert('"%s"' % vcvarsall, 0)
+                args.insert(vcplat, 1)
             self.spawn(args)
         
 class FetchVigraSource(setuptools.Command):
@@ -682,7 +683,7 @@ class BuildIlastik(distutils.command.build.build):
         [(FetchZlibSource.command_name, None),
          ('build_zlib', None),
          (FetchSZipSource.command_name, None),
-         ('build_slib', None),
+         ('build_szip', None),
          (FetchLibHDF5Source.command_name, None),
          ('build_libhdf5', None),
          ('fetch_boost', None),
