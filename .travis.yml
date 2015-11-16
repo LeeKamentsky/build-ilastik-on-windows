@@ -2,7 +2,8 @@ addons:
   apt:
     packages:
       - python-numpy
-      - qt4
+      - python-qt4
+      - python-h5py
       - cmake
       
 cache:
