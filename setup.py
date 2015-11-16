@@ -2,7 +2,6 @@ import setuptools
 import distutils.command.build
 import distutils.spawn
 import hashlib
-import h5py
 import os
 import requests
 import shutil
@@ -28,11 +27,6 @@ import zipfile
 #
 
 is_win = sys.platform.startswith('win')
-if is_win:
-    from distutils.msvc9compiler import \
-         find_vcvarsall, get_build_version, PLAT_TO_VCVARS,\
-         get_platform
-    vcplat = PLAT_TO_VCVARS[get_platform()]
     
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
@@ -124,16 +118,6 @@ class BuildWithCMake(setuptools.Command):
         finally:
             os.chdir(old_dir)
         
-    def spawn(self, args):
-        '''Spawn a process using the correct compile environment'''
-        if sys.platform.startswith('win'):
-            if not hasattr(self, 'vcvarsall'):
-                self.vcvarsall = find_vcvarsall(get_build_version())
-            if self.vcvarsall is not None:
-                args = ['"%s"' % self.vcvarsall, vcplat] + args
-        return distutils.spawn.spawn(
-            args, verbose = self.verbose, dry_run=self.dry_run)
-
 class FetchSZipSource(setuptools.Command):
     command_name = "fetch_szip"
     user_options = []
@@ -213,7 +197,11 @@ class FetchLibHDF5Source(setuptools.Command):
     user_options = [ ("version=", "v", "version to fetch"),
                      ("url=", None, "URL of HDF5 source")]
     command_name = "fetch_libhdf5"
-    default_version = h5py.version.hdf5_version
+    try:
+        import h5py
+        default_version = h5py.version.hdf5_version
+    except:
+        default_version = "1.8.11"
     @staticmethod
     def make_url(version):
         return (
@@ -277,6 +265,38 @@ class FetchBoostSource(setuptools.Command):
         members = filter(my_filter,boost_tar.getmembers())
         
         boost_tar.extractall(self.boost_dest, members)
+        
+class FetchH5PySource(setuptools.Command):
+    user_options = [ ("url=", None, "URL of H5Py source"),
+                     ("version=", None, "H5py version, e.g. 2.3.1")]
+    command_name = "fetch_h5py"
+
+    def initialize_options(self):
+        self.url = None
+        self.build_lib = None
+        self.source_dir = None
+        self.boost_dest = None
+        
+    def finalize_options(self):
+        self.set_undefined_options(
+            "build", ('build_lib', 'build_lib'))
+        if self.version is None:
+            self.version = "2.3.1"
+        if self.url is None:
+            self.url = \
+                "https://github.com/h5py/h5py/archive/%s.tar.gz" % self.version
+
+        self.announce("Using URL=%s" % self.url, level=2)
+        self.h5py_dest = os.path.join(self.build_lib, "h5py")
+        self.source_dir = os.path.join(self.h5py_dest, 
+                                       "h5py-%s" % self.version)
+        
+    def run(self):
+        self.announce("Fetching H5Py source")
+        request = requests.get(self.url, stream=False)
+        h5py_tar = tarfile.open("%s.tar.gz" % self.version,
+                                 fileobj = StringIO.StringIO(request.content))
+        h5py_tar.extractall(self.h5py_dest)
         
 class FetchFFTWSource(setuptools.Command):
     user_options = [ ("url=", None, "URL of FFTW source")]
@@ -344,15 +364,10 @@ class FetchFFTWWindowsBinaries(setuptools.Command):
         # Have to build libfftw-3.3.lib and others
         #
         from distutils.msvc9compiler import get_build_version, find_vcvarsall
-        build_version = get_build_version()
-        vcvarsall = find_vcvarsall(build_version)
         for libname in ("libfftw3-3", "libfftw3f-3", "libfftw3l-3"):
             args = ["lib", "/machine:x64", 
                     "/def:%s.def" % os.path.join(self.install_dir, libname),
                     "/out:%s.lib" % os.path.join(self.install_dir, libname)]
-            if vcvarsall is not None:
-                args.insert('"%s"' % vcvarsall, 0)
-                args.insert(vcplat, 1)
             self.spawn(args)
         
 class FetchVigraSource(setuptools.Command):
@@ -441,6 +456,33 @@ class BuildLibhdf5(BuildWithCMake):
                 path = os.path.abspath(install_dir)
             self.extra_cmake_options.append(
                 "\"-D{varname}:{cmake_type}={path}\"".format(**locals()))
+            
+class BuildH5Py(setuptools.Command):
+    user_options = [("hdf5", None, "Location of libhdf5 install")]
+    command_name = "build_h5py"
+    
+    def initialize_options(self):
+        self.hdf5 = None
+        self.source_dir = None
+        
+    def finalize_options(self):
+        if self.hdf5 is None:
+            self.set_undefined_options(
+                'build_libhdf5', ('install_dir', 'hdf5'))
+        if self.source_dir is None:
+            self.set_undefined_options(
+                'fetch_h5py', ('source_dir', 'source_dir'))
+        
+    def run(self):
+        hdf5 = os.path.abspath(self.hdf5)
+        old_curdir = os.path.abspath(os.curdir)
+        os.chdir(os.path.abspath(self.source_dir))
+        try:
+            self.spawn([
+                "python", "setup.py", "build", '--hdf5="%s"' % hdf5])
+            self.spawn(["python", "setup.py", "install"])
+        finally:
+            os.chdir(old_curdir)
 
 class BuildBoost(setuptools.Command):
     command_name = "build_boost"
@@ -678,6 +720,13 @@ class BuildIlastik(distutils.command.build.build):
     def initialize_options(self):
         distutils.command.build.build.initialize_options(self)
         self.cmake = None
+    
+    def needs_h5py(self):
+        try:
+            import h5py
+            return False
+        except ImportError:
+            return True
         
     sub_commands = distutils.command.build.build.sub_commands + \
         [(FetchZlibSource.command_name, None),
@@ -686,6 +735,8 @@ class BuildIlastik(distutils.command.build.build):
          ('build_szip', None),
          (FetchLibHDF5Source.command_name, None),
          ('build_libhdf5', None),
+         (FetchH5PySource.command_name, needs_h5py),
+         (BuildH5Py.command_name, needs_h5py),
          ('fetch_boost', None),
          ('build_boost', None),
          ('fetch_vigra', None),
@@ -708,7 +759,8 @@ try:
     command_classes = dict([(cls.command_name, cls) for cls in (
             BuildIlastik, FetchLibHDF5Source, FetchSZipSource,
             FetchZlibSource, FetchBoostSource, FetchIlastikSource,
-            FetchFFTWSource, FetchFFTWWindowsBinaries, FetchVigraSource)])
+            FetchFFTWSource, FetchFFTWWindowsBinaries, FetchVigraSource,
+            FetchH5PySource, BuildH5Py)])
     for build_class in ('build_zlib', 'build_szip'):
         command_classes[build_class] = BuildWithCMake
     command_classes['build_libhdf5'] = BuildLibhdf5

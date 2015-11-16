@@ -3,7 +3,6 @@ addons:
     packages:
       - python-numpy
       - python-qt4
-      - python-h5py
       - python-virtualenv
       - cmake
       
