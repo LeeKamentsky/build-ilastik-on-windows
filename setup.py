@@ -671,9 +671,9 @@ class InstallIlastik(setuptools.Command):
         
 class BuildIlastik(distutils.command.build.build):
     command_name = 'build'
-    user_options.append(("cmake", None, "Location of the CMake executable"))
     
     def initialize_options(self):
+        self.user_options.append(("cmake", None, "Location of the CMake executable"))
         distutils.command.build.build.initialize_options(self)
         self.cmake = None
         
