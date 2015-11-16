@@ -54,7 +54,7 @@ class BuildWithCMake(setuptools.Command):
             else:
                 raise distutils.command.build.DistutilsOptionError(
                 "CMake is not installed in the default location and --cmake not specified")
-        else:
+        elif self.cmake is None:
             self.cmake = "cmake"
         if self.source_dir is None:
             self.set_undefined_options(
