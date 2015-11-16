@@ -50,6 +50,7 @@ class BuildWithCMake(setuptools.Command):
     def finalize_options(self):
         self.set_undefined_options(
             'build', ('build_lib', 'build_lib'))
+        self.set_undefined_options('build', ('cmake', 'cmake'))
         if self.cmake is None and is_win:
             path = r"C:\Program Files (x86)\CMake\bin"
             if os.path.exists(path):
@@ -58,7 +59,7 @@ class BuildWithCMake(setuptools.Command):
                 raise distutils.command.build.DistutilsOptionError(
                 "CMake is not installed in the default location and --cmake not specified")
         else:
-            cmake = "cmake"
+            self.cmake = "cmake"
         if self.source_dir is None:
             self.set_undefined_options(
                 self.src_command, ("source_dir", "source_dir"))
@@ -670,7 +671,12 @@ class InstallIlastik(setuptools.Command):
         
 class BuildIlastik(distutils.command.build.build):
     command_name = 'build'
+    user_options.append(("cmake", None, "Location of the CMake executable"))
     
+    def initialize_options(self):
+        distutils.command.build.build.initialize_options(self)
+        self.cmake = None
+        
     sub_commands = distutils.command.build.build.sub_commands + \
         [(FetchZlibSource.command_name, None),
          ('build_zlib', None),
