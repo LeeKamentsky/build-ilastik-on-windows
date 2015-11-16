@@ -79,7 +79,7 @@ class BuildWithCMake(setuptools.Command):
         if is_win:
             return "NMake Makefiles"
         else:
-            return "Unix Makefules"
+            return "Unix Makefiles"
         
     def get_make_program(self):
         if is_win:
@@ -130,7 +130,7 @@ class BuildWithCMake(setuptools.Command):
                      import find_vcvarsall, get_build_version
                 self.vcvarsall = find_vcvarsall(get_build_version())
             if self.vcvarsall is not None:
-                args = [self.vcvarsall] + args
+                args = ['"%s"' % self.vcvarsall] + args
         return distutils.spawn.spawn(
             args, verbose = self.verbose, dry_run=self.dry_run)
 
@@ -351,7 +351,7 @@ class FetchFFTWWindowsBinaries(setuptools.Command):
                     "/def:%s.def" % os.path.join(self.install_dir, libname),
                     "/out:%s.lib" % os.path.join(self.install_dir, libname)]
             if vcvarsall is not None:
-                args.insert(vcvarsall, 0)
+                args.insert('"%"' % vcvarsall, 0)
             self.spawn(args)
         
 class FetchVigraSource(setuptools.Command):
