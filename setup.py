@@ -50,13 +50,15 @@ class BuildWithCMake(setuptools.Command):
     def finalize_options(self):
         self.set_undefined_options(
             'build', ('build_lib', 'build_lib'))
-        if self.cmake is None:
+        if self.cmake is None and is_win:
             path = r"C:\Program Files (x86)\CMake\bin"
             if os.path.exists(path):
-                self.cmake = path
+                self.cmake = os.path.join(path, "cmake")
             else:
                 raise distutils.command.build.DistutilsOptionError(
                 "CMake is not installed in the default location and --cmake not specified")
+        else:
+            cmake = "cmake"
         if self.source_dir is None:
             self.set_undefined_options(
                 self.src_command, ("source_dir", "source_dir"))
@@ -93,8 +95,7 @@ class BuildWithCMake(setuptools.Command):
         return True
     
     def run(self):
-        cmake_args = [
-            os.path.join(self.cmake, "cmake")]
+        cmake_args = [self.cmake]
         cmake_args += ["-G", self.get_cmake_generator()]
         if self.use_custom_install_dir():
             cmake_args.append(
