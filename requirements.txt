@@ -1,4 +1,4 @@
 numpy
-h5py>=2.3
+Cython
 requests
 setuptools
