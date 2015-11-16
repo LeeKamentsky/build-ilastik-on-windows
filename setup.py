@@ -60,8 +60,10 @@ class BuildWithCMake(setuptools.Command):
         if self.source_dir is None:
             self.set_undefined_options(
                 self.src_command, ("source_dir", "source_dir"))
+        root, leaf = os.path.split(self.source_dir)
+        if self.target_dir is None:
+            self.target_dir = os.path.join(root, "tmp", leaf)
         if self.install_dir is None:
-            root, leaf = os.path.split(self.source_dir)
             self.install_dir = os.path.abspath(
                 os.path.join(root, "install", leaf))
     
@@ -81,20 +83,38 @@ class BuildWithCMake(setuptools.Command):
             return "nmake"
         return "make"
     
+    def use_custom_install_dir(self):
+        '''Should we honor the install directory or use the default?
+
+        Override this and return False if CMake should install to the
+        package's default location. Return True to install to a location
+        in the build tree.
+        '''
+        return True
+    
     def run(self):
         cmake_args = [
             os.path.join(self.cmake, "cmake")]
-        cmake_args += ["-G", self.get_cmake_generator(),
-                       '-DCMAKE_INSTALL_PREFIX:PATH="%s"' % self.install_dir]
+        cmake_args += ["-G", self.get_cmake_generator()]
+        if self.use_custom_install_dir():
+            cmake_args.append(
+                '-DCMAKE_INSTALL_PREFIX:PATH="%s"' % 
+                os.path.abspath(self.install_dir))
+        target_dir = os.path.abspath(self.target_dir)
         if is_win:
             cmake_args.append('-DCMAKE_BUILD_TYPE:STRING="Release"')
         cmake_args += self.extra_cmake_options
+        if not os.path.exists(self.target_dir):
+            os.makedirs(self.target_dir)
         # I don't like changing directories. I can't see any way to make
         # cmake build its makefiles in another directory
         old_dir = os.path.abspath(os.curdir)
-        os.chdir(self.source_dir)
+        source_dir = os.path.abspath(self.source_dir)
+        cmake_args.append(source_dir)
+        os.chdir(target_dir)
         try:
             self.spawn(cmake_args)
+            os.chdir(target_dir)
             self.spawn([self.get_make_program()])
             self.spawn([self.get_make_program(), "install"])
         finally:
@@ -358,6 +378,33 @@ class FetchVigraSource(setuptools.Command):
             fileobj =StringIO.StringIO(request.content))
         vigra_tar.extractall(self.vigra_dest)
     
+class FetchIlastikSource(setuptools.Command):
+    user_options = [ ("url=", None, "URL of Ilastik source")]
+    command_name = "fetch_ilastik"
+    
+    def initialize_options(self):
+        self.url = \
+            "http://cellprofiler.org/linux/SOURCES/ilastik-v0.5.05.tar.gz"
+        self.build_lib = None
+        self.source_dir = None
+        self.ilastik_dest = None
+        
+    def finalize_options(self):
+        self.set_undefined_options(
+            "build", ('build_lib', 'build_lib'))
+
+        self.announce("Using URL=%s" % self.url, level=2)
+        self.ilastik_dest = os.path.join(self.build_lib, "ilastik")
+        self.source_dir = os.path.join(self.ilastik_dest, "ilastik-v0.5.05")
+        
+    def run(self):
+        self.announce("Fetching Ilastik source")
+        request = requests.get(self.url, stream=False)
+        ilastik_tar = tarfile.open(
+            "ilastik-v0.5.05.tar.gz",
+            fileobj =StringIO.StringIO(request.content))
+        ilastik_tar.extractall(self.ilastik_dest)
+        
 class BuildLibhdf5(BuildWithCMake):
     def initialize_options(self):
         BuildWithCMake.initialize_options(self)
@@ -559,22 +606,29 @@ class BuildVigra(BuildWithCMake):
             self.fftw_include_dir = os.path.join(
                 self.fftw_install_dir)
         self.extra_cmake_options.append(
-            '-DFFTW3_INCLUDE_DIR:PATH="%s"' % self.fftw_install_dir)
+            '-DFFTW3_INCLUDE_DIR:PATH="%s"' % 
+            os.path.abspath(self.fftw_install_dir))
         
         if self.fftw_library is None:
             self.fftw_library = os.path.join(
                 self.fftw_install_dir, "libfftw3-3.lib")
         self.extra_cmake_options.append(
-            '-DFFTW3_LIBRARY:FILEPATH="%s"' % self.fftw_library)
-        
+            '-DFFTW3_LIBRARY:FILEPATH="%s"' % 
+            os.path.abspath(self.fftw_library))
+
+        #
+        # BOOST configuration
+        #
+        self.extra_cmake_options.append(
+            '-DBOOST_ROOT:PATH="%s"' % os.path.abspath(self.boost_src))
         if is_win:
             vcver = int(get_build_version()) * 10
             boost_libname = "boost_python-vc%d-mt-1_53.lib" % vcver
         else:
             raise NotImplementedError("Need to manufacture library name for other platforms")
         if self.boost_library_dir is None:
-            self.boost_library_dir = os.path.join(
-                self.boost_install_dir, "lib")
+            self.boost_library_dir = os.path.abspath(os.path.join(
+                self.boost_install_dir, "lib"))
         if self.boost_python_library is None:
             self.boost_python_library = os.path.join(
                 self.boost_library_dir, boost_libname)
@@ -585,9 +639,33 @@ class BuildVigra(BuildWithCMake):
             '-DBoost_LIBRARY_DIR:PATH="%s"' % self.boost_library_dir)
         
         if self.boost_include_dir is None:
-            self.boost_include_dir = self.boost_src
+            self.boost_include_dir = os.path.abspath(self.boost_src)
         self.extra_cmake_options.append(
             '-DBoost_INCLUDE_DIR:PATH="%s"' % self.boost_include_dir)
+    
+    def use_custom_install_dir(self):
+        '''Install Vigra to Python'''
+        return False
+        
+class InstallIlastik(setuptools.Command):
+    command_name = 'install_ilastik'
+    user_options = []
+    
+    def initialize_options(self):
+        self.ilastik_src = None
+        
+    def finalize_options(self):
+        if self.ilastik_src is None:
+            self.set_undefined_options(
+                'fetch_ilastik', ('source_dir', 'ilastik_src'))
+    
+    def run(self):
+        old_curdir = os.path.abspath('.')
+        os.chdir(os.path.abspath(self.ilastik_src))
+        try:
+            self.spawn(['python', 'setup.py'])
+        finally:
+            os.chdir(old_curdir)
         
 class BuildIlastik(distutils.command.build.build):
     command_name = 'build'
@@ -600,7 +678,11 @@ class BuildIlastik(distutils.command.build.build):
          (FetchLibHDF5Source.command_name, None),
          ('build_libhdf5', None),
          ('fetch_boost', None),
-         ('build_boost', None)]
+         ('build_boost', None),
+         ('fetch_vigra', None),
+         ('build_vigra', None),
+         ('fetch_ilastik', None),
+         ('install_ilastik', None)]
     
     if is_win:
         sub_commands.append('fetch_fftw_binaries')
@@ -608,17 +690,21 @@ class BuildIlastik(distutils.command.build.build):
         sub_commands += [('fetch_fftw', None), ('build_fftw')]
     sub_commands += [         
          ('fetch_vigra', None)]
+    
+            
+        
 
 
 try:
     command_classes = dict([(cls.command_name, cls) for cls in (
             BuildIlastik, FetchLibHDF5Source, FetchSZipSource,
-            FetchZlibSource, FetchBoostSource, 
+            FetchZlibSource, FetchBoostSource, FetchIlastikSource,
             FetchFFTWSource, FetchFFTWWindowsBinaries, FetchVigraSource)])
     for build_class in ('build_zlib', 'build_szip'):
         command_classes[build_class] = BuildWithCMake
     command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_boost'] = BuildBoost
+    command_classes['build_vigra'] = BuildVigra
     setuptools.setup(
         cmdclass=command_classes,
         options = {
