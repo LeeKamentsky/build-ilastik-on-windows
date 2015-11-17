@@ -96,7 +96,7 @@ class BuildWithCMake(setuptools.Command):
     def run(self):
         cmake_args = [self.cmake]
         cmake_args += ["-G", self.get_cmake_generator()]
-        if self.use_custom_install_dir():
+        if self.use_custom_install_dir() and not is_win:
             cmake_args.append(
                 '"-DCMAKE_INSTALL_PREFIX:PATH=%s"' % 
                 os.path.abspath(self.install_dir))
@@ -116,7 +116,12 @@ class BuildWithCMake(setuptools.Command):
             self.spawn(cmake_args)
             os.chdir(target_dir)
             self.spawn([self.get_make_program()])
-            self.spawn([self.get_make_program(), "install"])
+            if (not self.use_custom_install_dir()) or is_win:
+                self.spawn([self.get_make_program(), "install"])
+            else:
+                self.spawn([self.get_make_program(),
+                            "DESTDIR=%s" % os.path.abspath(self.install_dir),
+                            "install"])
         finally:
             os.chdir(old_dir)
         
