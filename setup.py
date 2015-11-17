@@ -466,7 +466,7 @@ class BuildLibhdf5(BuildWithCMake):
              self.szip_install_dir, "lib/szip.%s" % lib_ext),
             ("SZIP_DIR", "PATH", self.szip_make_dir, None),
             ("SZIP_INCLUDE_DIR", "PATH", self.szip_install_dir, "include"),
-            ("ZLIB_DIR", "PATH", self.zlib_make_dir, None),
+            ("ZLIB_DIR", "PATH", self.zlib_install_dir, None),
             ("ZLIB_INCLUDE_DIR", "PATH", self.zlib_install_dir, "include"),
             ("ZLIB_LIBRARY_RELEASE", "FILEPATH", 
              self.zlib_install_dir, "lib/zlib.%s" % lib_ext)):
