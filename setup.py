@@ -464,15 +464,21 @@ class BuildLibhdf5(BuildWithCMake):
             ('install_dir', 'szip_install_dir'),
             ('target_dir', 'szip_make_dir'),
             ('source_dir','szip_source_dir'))
+        if is_win:
+            szip_lib = 'szip.' + lib_ext
+            zlib_lib = 'zlib.' + lib_ext
+        else:
+            szip_lib = 'libszip.' + lib_ext
+            zlib_lib = 'libz.' + lib_ext
         for varname, cmake_type, install_dir, folder in (
             ("SZIP_LIBRARY_RELEASE", "FILEPATH", 
-             self.szip_install_dir, "lib/szip.%s" % lib_ext),
+             self.szip_install_dir, os.path.join("lib", szip_lib)),
             ("SZIP_DIR", "PATH", self.szip_make_dir, None),
             ("SZIP_INCLUDE_DIR", "PATH", self.szip_install_dir, "include"),
             ("ZLIB_DIR", "PATH", self.zlib_install_dir, None),
             ("ZLIB_INCLUDE_DIR", "PATH", self.zlib_install_dir, "include"),
             ("ZLIB_LIBRARY_RELEASE", "FILEPATH", 
-             self.zlib_install_dir, "lib/zlib.%s" % lib_ext)):
+             self.zlib_install_dir, os.path.join("lib", zlib_lib))):
             if folder is not None:
                 path = os.path.abspath(os.path.join(install_dir, folder))
             else:
