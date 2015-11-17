@@ -549,11 +549,20 @@ class BuildBoost(setuptools.Command):
             # MSVC used to compile Python (we may want to change this
             # to detect the SDK)
             #
-            project_config_path = os.path.join(self.boost_src, "project-config.jam")
+            from distutils.sysconfig import get_config_var, get_python_inc
+            def fixpath(path):
+                path = path.replace("\\", "/")
+                return path
+            libs_path = fixpath(get_config_var('LIBDIR'))
+            python_path = fixpath(sys.executable)
+            include_path = fixpath(get_python_inc())
+            project_config_path = os.path.join(
+                self.boost_src, "project-config.jam")
             with open(project_config_path, "w") as fd:
                 fd.write("using msvc : %s ;\n" % build_version)
-                fd.write("using python : %d.%d ;\n" % 
-                         (sys.version_info.major, sys.version_info.minor))
+                fd.write('using python : %d.%d : "%s" : "%s" : "%s" ;' % 
+                         (sys.version_info.major, sys.version_info.minor,
+                          python_path, include_path, libs_path))
     
     def spawn(self, args):
         #
