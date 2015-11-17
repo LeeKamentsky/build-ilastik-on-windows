@@ -109,7 +109,7 @@ class BuildWithCMake(setuptools.Command):
     def run(self):
         cmake_args = [self.cmake]
         cmake_args += ["-G", self.get_cmake_generator()]
-        if self.use_custom_install_dir() and not is_win:
+        if self.use_custom_install_dir() and is_win:
             cmake_args.append(
                 '"-DCMAKE_INSTALL_PREFIX:PATH=%s"' % 
                 os.path.abspath(self.install_root))
