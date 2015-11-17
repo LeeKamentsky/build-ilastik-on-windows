@@ -128,7 +128,7 @@ class BuildWithCMake(setuptools.Command):
         try:
             try:
                 self.spawn(cmake_args)
-            except:
+            except SystemExit:
                 logfile = os.path.join("CMakeFiles", "CMakeError.log")
                 with open(logfile, "r") as fd:
                     for line in fd:
