@@ -44,6 +44,7 @@ class BuildWithCMake(setuptools.Command):
         self.src_command = None
         self.extra_cmake_options = []
         self.install_dir = None
+        self.install_root = None
         
     def finalize_options(self):
         self.set_undefined_options(
@@ -64,9 +65,15 @@ class BuildWithCMake(setuptools.Command):
         root, leaf = os.path.split(self.source_dir)
         if self.target_dir is None:
             self.target_dir = os.path.join(root, "tmp", leaf)
-        if self.install_dir is None:
-            self.install_dir = os.path.abspath(
+        if self.install_root is None:
+            self.install_root = os.path.abspath(
                 os.path.join(root, "install", leaf))
+        if self.install_dir is None:
+            if is_win:
+                self.install_dir = self.install_root
+            else:
+                self.install_dir = os.path.join(
+                    self.install_root, "usr", "local")
     
     def get_sub_commands(self):
         if os.path.exists(self.source_dir):
@@ -120,7 +127,7 @@ class BuildWithCMake(setuptools.Command):
                 self.spawn([self.get_make_program(), "install"])
             else:
                 self.spawn([self.get_make_program(),
-                            "DESTDIR=%s" % os.path.abspath(self.install_dir),
+                            "DESTDIR=%s" % os.path.abspath(self.install_root),
                             "install"])
         finally:
             os.chdir(old_dir)
