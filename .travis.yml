@@ -19,7 +19,9 @@ notifications:
 python:
   - 2.7
 
-sudo: false
+# Use the Ubuntu Trusty travis beta because it has a better CMake
+sudo: required
+dist: trusty
 
 virtualenv:
   system_site_packages: true

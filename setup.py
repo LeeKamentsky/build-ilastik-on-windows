@@ -430,23 +430,27 @@ class BuildLibhdf5(BuildWithCMake):
         self.szip_install_dir = None
         self.zlib_source_dir = None
         self.szip_source_dir = None
+        self.zlib_make_dir = None
+        self.szip_make_dir = None
         
     def finalize_options(self):
         BuildWithCMake.finalize_options(self)
         self.set_undefined_options(
             'build_zlib', 
             ('install_dir', 'zlib_install_dir'),
+            ('target_dir', 'zlib_make_dir'),
             ('source_dir', 'zlib_source_dir'))
         self.set_undefined_options(
             'build_szip', 
             ('install_dir', 'szip_install_dir'),
+            ('target_dir', 'szip_make_dir'),
             ('source_dir','szip_source_dir'))
         for varname, cmake_type, install_dir, folder in (
             ("SZIP_LIBRARY_RELEASE", "FILEPATH", 
              self.szip_install_dir, "lib/szip.lib"),
-            ("SZIP_DIR", "PATH", self.szip_source_dir, None),
+            ("SZIP_DIR", "PATH", self.szip_make_dir, None),
             ("SZIP_INCLUDE_DIR", "PATH", self.szip_install_dir, "include"),
-            ("ZLIB_DIR", "PATH", self.zlib_source_dir, None),
+            ("ZLIB_DIR", "PATH", self.zlib_make_dir, None),
             ("ZLIB_INCLUDE_DIR", "PATH", self.zlib_install_dir, "include"),
             ("ZLIB_LIBRARY_RELEASE", "FILEPATH", 
              self.zlib_install_dir, "lib/zlib.lib")):
