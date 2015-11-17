@@ -126,7 +126,14 @@ class BuildWithCMake(setuptools.Command):
         cmake_args.append(source_dir)
         os.chdir(target_dir)
         try:
-            self.spawn(cmake_args)
+            try:
+                self.spawn(cmake_args)
+            except:
+                logfile = os.path.join("CMakeFiles", "CMakeError.log")
+                with open(logfile, "r") as fd:
+                    for line in fd:
+                        self.announce(line)
+                raise
             os.chdir(target_dir)
             self.spawn([self.get_make_program()])
             if (not self.use_custom_install_dir()) or is_win:
