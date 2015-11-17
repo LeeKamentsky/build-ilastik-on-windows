@@ -29,6 +29,9 @@ import zipfile
 is_win = sys.platform.startswith('win')
 if is_win:
     from distutils.msvc9compiler import get_build_version
+    lib_ext = "lib"
+else:
+    lib_ext = "so"
     
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
@@ -106,7 +109,7 @@ class BuildWithCMake(setuptools.Command):
         if self.use_custom_install_dir() and not is_win:
             cmake_args.append(
                 '"-DCMAKE_INSTALL_PREFIX:PATH=%s"' % 
-                os.path.abspath(self.install_dir))
+                os.path.abspath(self.install_root))
         target_dir = os.path.abspath(self.target_dir)
         if is_win:
             cmake_args.append('-DCMAKE_BUILD_TYPE:STRING="Release"')
@@ -460,13 +463,13 @@ class BuildLibhdf5(BuildWithCMake):
             ('source_dir','szip_source_dir'))
         for varname, cmake_type, install_dir, folder in (
             ("SZIP_LIBRARY_RELEASE", "FILEPATH", 
-             self.szip_install_dir, "lib/szip.lib"),
+             self.szip_install_dir, "lib/szip.%s" % lib_ext),
             ("SZIP_DIR", "PATH", self.szip_make_dir, None),
             ("SZIP_INCLUDE_DIR", "PATH", self.szip_install_dir, "include"),
             ("ZLIB_DIR", "PATH", self.zlib_make_dir, None),
             ("ZLIB_INCLUDE_DIR", "PATH", self.zlib_install_dir, "include"),
             ("ZLIB_LIBRARY_RELEASE", "FILEPATH", 
-             self.zlib_install_dir, "lib/zlib.lib")):
+             self.zlib_install_dir, "lib/zlib.%s" % lib_ext)):
             if folder is not None:
                 path = os.path.abspath(os.path.join(install_dir, folder))
             else:
@@ -635,7 +638,7 @@ class BuildVigra(BuildWithCMake):
         
         if self.zlib_library is None:
             self.zlib_library = os.path.join(
-                self.zlib_install_dir, 'lib', 'zlib.lib')
+                self.zlib_install_dir, 'lib', 'zlib.%s' % lib_ext)
         self.extra_cmake_options.append(
             '"-DZLIB_LIBRARY:FILEPATH=%s"' % self.zlib_library)
         self.extra_cmake_options.append(
@@ -649,18 +652,18 @@ class BuildVigra(BuildWithCMake):
         
         if self.hdf5_core_library is None:
             self.hdf5_core_library = os.path.join(
-                self.libhdf5_install_dir, 'lib', "hdf5.lib")
+                self.libhdf5_install_dir, 'lib', "hdf5.%s" % lib_ext)
         self.extra_cmake_options.append(
             '"-DHDF5_CORE_LIBRARY:FILEPATH=%s"' % self.hdf5_core_library)
         if self.hdf5_hl_library is None:
             self.hdf5_hl_library = os.path.join(
-                self.libhdf5_install_dir, "lib", "hdf5_hl.lib")
+                self.libhdf5_install_dir, "lib", "hdf5_hl.%s" % lib_ext)
         self.extra_cmake_options.append(
             '"-DHDF5_HL_LIBRARY:FILEPATH=%s"' % self.hdf5_hl_library)
         
         if self.szip_library is None:
             self.szip_library = os.path.join(
-                self.szip_install_dir, 'lib', 'szip.lib')
+                self.szip_install_dir, 'lib', 'szip.%s' % lib_ext)
         self.extra_cmake_options.append(
         '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
         
@@ -679,7 +682,7 @@ class BuildVigra(BuildWithCMake):
         
         if self.fftw_library is None:
             self.fftw_library = os.path.join(
-                self.fftw_install_dir, "libfftw3-3.lib")
+                self.fftw_install_dir, "libfftw3-3.%s" % lib_ext)
         self.extra_cmake_options.append(
             '"-DFFTW3_LIBRARY:FILEPATH=%s"' % 
             os.path.abspath(self.fftw_library))
