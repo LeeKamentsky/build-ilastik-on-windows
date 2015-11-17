@@ -1,5 +1,6 @@
 import setuptools
 import distutils.command.build
+import distutils.sysconfig
 import distutils.spawn
 import hashlib
 import os
@@ -30,8 +31,10 @@ is_win = sys.platform.startswith('win')
 if is_win:
     from distutils.msvc9compiler import get_build_version
     lib_ext = "lib"
+    dll_ext = "dll"
 else:
     lib_ext = "so"
+    dll_ext = "so"
     
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
@@ -637,8 +640,12 @@ class BuildVigra(BuildWithCMake):
                 'build_fftw', ('install_dir', 'fftw_install_dir'))
         
         if self.zlib_library is None:
+            if is_win:
+                zlib = 'zlib.' + lib_ext
+            else:
+                zlib = 'libz.' + lib_ext
             self.zlib_library = os.path.join(
-                self.zlib_install_dir, 'lib', 'zlib.%s' % lib_ext)
+                self.zlib_install_dir, 'lib', zlib)
         self.extra_cmake_options.append(
             '"-DZLIB_LIBRARY:FILEPATH=%s"' % self.zlib_library)
         self.extra_cmake_options.append(
@@ -713,6 +720,40 @@ class BuildVigra(BuildWithCMake):
             self.boost_include_dir = os.path.abspath(self.boost_src)
         self.extra_cmake_options.append(
             '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
+        
+    def run(self):
+        BuildWithCMake.run(self)
+        #
+        # Install dependent libraries in the Vigra directory
+        #
+        target = os.path.join(distutils.sysconfig.get_python_lib(), "vigra")
+        lib_dir = "bin" if is_win else lib
+        for src in self.boost_python_library, self.hdf5_core_library, \
+            self.hdf5_hl_library, self.szip_library, self.zlib_library:
+            if is_win:
+                root, leaf = os.path.split(src)
+                leafroot, leafext = os.path.splitext(leaf)
+                for loc in "bin", "lib":
+                    src = os.path.join(
+                        os.path.dirname(root), loc, leafroot+".dll")
+                    if os.path.exists(src):
+                        break
+            target_file = os.path.join(target, os.path.split(src)[1])
+            self.copy_file(src, target_file)
+        #
+        # vigraimpex.dll is in the build directory at
+        # src/impex
+        #
+        src = os.path.join(
+            self.target_dir, "src", "impex", "vigraimpex." + dll_ext)
+        target_file = os.path.join(target, os.path.split(src)[1])
+        self.copy_file(src, target_file)
+        #
+        # libfftw
+        #
+        src = os.path.splitext(self.fftw_library)[0] + "." + dll_ext
+        target_file = os.path.join(target, os.path.split(src)[1])
+        self.copy_file(src, target_file)
     
     def use_custom_install_dir(self):
         '''Install Vigra to Python'''
