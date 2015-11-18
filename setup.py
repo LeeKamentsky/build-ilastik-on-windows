@@ -1,5 +1,6 @@
 import setuptools
 import distutils.command.build
+from distutils.errors import DistutilsSetupError
 import distutils.sysconfig
 import distutils.spawn
 import hashlib
@@ -11,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import urllib2
+import urlparse
 import zipfile
 
 #
@@ -144,212 +146,124 @@ class BuildWithCMake(setuptools.Command):
                             "install"])
         finally:
             os.chdir(old_dir)
-        
-class FetchSZipSource(setuptools.Command):
-    command_name = "fetch_szip"
-    user_options = []
+
+class FetchSource(setuptools.Command, object):
+    '''Download and untar a tarball or zipfile
     
+    interesting configurable attributes:
+    
+    package_name - the name of the package, used to provide defaults for
+                   other stuff. Defaults to 
+                   self.get_command_name().rpartition("_")[-1] (e.g.
+                   "fetch_foo" has a default package name of "foo")
+    version - the version of the package to be fetched.
+    full_name - the full name of the source, defaults to
+                "{package_name}-{version}"
+    url - the download source. FetchSource untars based on the extension.
+          The url is parameterizable using .format(d) where d is a dictionary
+          containing the package name, full name and version. For instance,
+          "http://my.org/package-{version}.tar.gz" will be parameterizable
+          by the version attribute. The default URL assumes that the
+          package name is both the owner and repo name of a Github repo
+          and that the version is tagged.
+    unpack_dir - where to unpack the tarball, relative to the build library
+                 directory. Defaults to package name
+    source_dir - where the source unpacks to. Defaults to fullname. This should
+                 match the structure of the tarball itself - we do not infer.
+    post_fetch - a callable object to be run after the source has been downloaded
+                 and untarred, e.g. to apply a patch. Called with the command
+                 as the single argument
+    member_filter - a function that evaluates a path in the tarball and returns
+                    True only if the associated member should be untarred.
+    '''
+    user_options = [
+        ( 'package-name', None, 'Name of the package being fetched' ),
+        ( 'github-owner', None, 'Name of the Github owner organization for the repo'),
+        ( 'full-name', None, "Package name + version" ),
+        ( 'version' , None, 'Revision # of the package' ),
+        ( 'url', None, 'URL to download the package' ),
+        ( 'unpack-dir', None, 'Where to unpack the source' ),
+        ( 'source-dir', None, 'Where the package will be after unpacking'),
+        ( 'post-fetch', None, 'Callable to run after unpacking' ),
+        ( 'member-filter', None, 'Function to filter tarball members' )
+        ]
     def initialize_options(self):
-        self.build_lib = None
-    
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-        self.szip_path = os.path.join(self.build_lib, "szip")
-        self.url = \
-            "https://www.hdfgroup.org/ftp/lib-external/szip/2.1/src/szip-2.1.tar.gz"
-        self.source_dir = os.path.join(self.szip_path, "szip-2.1")
-    
-    def run(self):
-        self.announce("Fetching SZIP source")
-        request = requests.get(self.url, stream=False)
-        szip_tar = tarfile.open("szip-2.1.tar.gz",
-                                fileobj = StringIO.StringIO(request.content))
-        szip_tar.extractall(self.szip_path)
-        expected_hash = 'fb8f11ef336e8d0a4d306aa479907979'
-        path = os.path.join(self.source_dir, "src", "CMakeLists.txt")
-        h = hashlib.md5(open(path, "rb").read())
-        if h.hexdigest() == expected_hash:
-            self.patch_cmakelists(path)
-        
-    def patch_cmakelists(self, path):
         #
-        # SZip CMake needs patching. It excludes ricehdf.h
+        # attributes fetched from build command
         #
-        handle, filename = tempfile.mkstemp(suffix=".h")
-        fd = os.fdopen(handle, "w")
-        with open(path) as fdsrc:
-            for i, line in enumerate(fdsrc):
-                line_number = i+1
-                if line_number >= 19 and line_number < 22:
-                    # These are private header files and ricehdf.h
-                    # is the only one. So we delete the section.
-                    if line_number == 20:
-                        # This is the line that includes ricehdf.h
-                        saved = line
-                    continue
-                elif line_number == 24:
-                    # put the line in the public headers
-                    fd.write(saved)
-                elif line_number == 28:
-                    # remove the private headers from the library def
-                    line = line.replace("${SZIP_HDRS} ", "")
-                fd.write(line)
-        fd.close()
-        shutil.copyfile(filename, path)
-        
-class FetchZlibSource(setuptools.Command):
-    command_name = "fetch_zlib"
-    user_options = []
-    
-    def initialize_options(self):
         self.build_lib = None
-    
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-        self.zlib_path = os.path.join(self.build_lib, "zlib")
-        self.url = \
-            "https://www.hdfgroup.org/ftp/lib-external/zlib/zlib-1.2.5.tar.gz"
-        self.source_dir = os.path.join(self.zlib_path, "zlib-1.2.5")
-    
-    def run(self):
-        self.announce("Fetching ZLib source")
-        request = requests.get(self.url, stream=False)
-        zlib_tar = tarfile.open("zlib-1.2.5.tar.gz",
-                                fileobj = StringIO.StringIO(request.content))
-        zlib_tar.extractall(self.zlib_path)
-        
-class FetchLibHDF5Source(setuptools.Command):
-    user_options = [ ("version=", "v", "version to fetch"),
-                     ("url=", None, "URL of HDF5 source")]
-    command_name = "fetch_libhdf5"
-    try:
-        import h5py
-        default_version = h5py.version.hdf5_version
-    except:
-        default_version = "1.8.11"
-    @staticmethod
-    def make_url(version):
-        return (
-            "https://www.hdfgroup.org/ftp/HDF5/releases/"
-            "hdf5-{version}/src/hdf5-{version}.zip").format(
-                version=version)
-
-    def initialize_options(self):
-        self.version = self.default_version
-        self.url = self.make_url(self.default_version)
-        self.build_lib = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-
-        if self.version != self.default_version and \
-           self.url == self.make_url(self.default_version):
-            self.url = self.make_url(self.version)
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.hdf5lib_dest = os.path.join(self.build_lib, "libhdf5")
-        self.source_dir = os.path.join(self.hdf5lib_dest,
-                                       "hdf5-%s" % self.version)
-        self.announce("Extracting to %s" % self.hdf5lib_dest)
-        
-    def run(self):
-        self.announce("Fetching libhdf5 source")
-        request = requests.get(self.url, stream=False)
-        hdf5_zip = zipfile.ZipFile(StringIO.StringIO(request.content))
-        hdf5_zip.extractall(self.hdf5lib_dest)
-        
-class FetchBoostSource(setuptools.Command):
-    user_options = [ ("url=", None, "URL of Boost source")]
-    command_name = "fetch_boost"
-
-    def initialize_options(self):
-        self.url = "http://cellprofiler.org/linux/SOURCES/boost_1_53_0.tar.bz2"
-        self.build_lib = None
-        self.source_dir = None
-        self.boost_dest = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.boost_dest = os.path.join(self.build_lib, "boost")
-        self.source_dir = os.path.join(self.boost_dest, "boost_1_53_0")
-        
-    def run(self):
-        self.announce("Fetching Boost source")
-        request = requests.get(self.url, stream=False)
-        boost_tar = tarfile.open("boost_1_53_0.tar.bz2",
-                                 fileobj = StringIO.StringIO(request.content))
-        def my_filter(x):
-            if x.name.partition("/")[2].startswith("doc"):
-                return False
-            if x.name.find("doc/html") >= 0:
-                return False
-            return True
-        members = filter(my_filter,boost_tar.getmembers())
-        
-        boost_tar.extractall(self.boost_dest, members)
-        
-class FetchH5PySource(setuptools.Command):
-    user_options = [ ("url=", None, "URL of H5Py source"),
-                     ("version=", None, "H5py version, e.g. 2.3.1")]
-    command_name = "fetch_h5py"
-
-    def initialize_options(self):
+        #
+        # command attributes
+        #
+        self.package_name = None
+        self.github_owner = None
+        self.full_name = None
+        self.version = None
         self.url = None
-        self.build_lib = None
+        self.unpack_dir = None
         self.source_dir = None
-        self.boost_dest = None
+        self.post_fetch = None
+        self.member_filter = None
         
     def finalize_options(self):
         self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-        if self.version is None:
-            self.version = "2.3.1"
-        if self.url is None:
-            self.url = \
-                "https://github.com/h5py/h5py/archive/%s.tar.gz" % self.version
-
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.h5py_dest = os.path.join(self.build_lib, "h5py")
-        self.source_dir = os.path.join(self.h5py_dest, 
-                                       "h5py-%s" % self.version)
+            'build', ('build_lib', 'build_lib'))
+        if self.package_name is None:
+            # "fetch_foo" has a default package name of "foo"
+            for key, value in self.distribution.command_obj.iteritems():
+                if value == self:
+                    self.package_name = key.rpartition("_")[-1]
+                    break
+            else:
+                raise DistutilsSetupError(
+                    "package-name must be defined")
+        if self.github_owner is None:
+            self.github_owner = self.package_name
+        if self.version is None and self.full_name is None:
+            raise DistutilsSetupError(
+                "Either one of or both the version and full_name must be defined")
+        elif self.full_name is None:
+            self.full_name = "{package_name}-{version}".format(**self.__dict__)
+        else:
+            self.full_name = self.full_name.format(**self.__dict__)
+        if self.url is None and self.version is None:
+            raise DistutilsSetupError(
+                "Setup script must define this command's url")
+        elif self.url is None:
+            self.url = "https://github.com/{github_owner}/{package_name}/archive/{version}.tar.gz"
+        self.url = self.url.format(**self.__dict__)
+        if self.unpack_dir is None:
+            self.unpack_dir = os.path.join(
+                self.build_lib, self.package_name)
+        if self.source_dir is None:
+            self.source_dir = os.path.join(
+                self.unpack_dir, self.full_name)
         
     def run(self):
-        self.announce("Fetching H5Py source")
-        request = requests.get(self.url, stream=False)
-        h5py_tar = tarfile.open("%s.tar.gz" % self.version,
-                                 fileobj = StringIO.StringIO(request.content))
-        h5py_tar.extractall(self.h5py_dest)
-        
-class FetchFFTWSource(setuptools.Command):
-    user_options = [ ("url=", None, "URL of FFTW source")]
-    command_name = "fetch_fftw"
-
-    def initialize_options(self):
-        self.url = "http://cellprofiler.org/linux/SOURCES/fftw-3.2.2.tar.gz"
-        self.build_lib = None
-        self.source_dir = None
-        self.fftw_dest = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.fftw_dest = os.path.join(self.build_lib, "fftw")
-        self.source_dir = os.path.join(self.fftw_dest, "fftw-3.2.2")
-        
-    def run(self):
-        self.announce("Fetching FFTW source")
-        request = requests.get(self.url, stream=False)
-        fftw_tar = tarfile.open(
-            "fftw-3.2.2.tar.gz",
-            fileobj =StringIO.StringIO(request.content))
-        fftw_tar.extractall(self.fftw_dest)
+        self.announce("Fetching " + self.url)
+        up = urlparse.urlparse(self.url)
+        target = os.path.join(os.path.dirname(self.source_dir),
+                              up.path.rpartition('/')[-1])
+        if not os.path.exists(self.source_dir):
+            os.makedirs(self.source_dir)
+        request = requests.get(self.url, stream=True)
+        with open(target, "wb") as fd:
+            for chunk in request.iter_content(chunk_size = 65536):
+                fd.write(chunk)
+        members = None
+        if target.lower().endswith(".zip"):
+            tarball = zipfile.ZipFile(target)
+            if self.member_filter is not None:
+                members = filter(self.member_filter, tarball.namelist)
+        else:
+            tarball = tarfile.open(target)
+            if self.member_filter is not None:
+                def filter_fn(member, name_filter = self.member_filter):
+                    return name_filter(member.name)
+                members = filter(filter_fn, tarball.getmembers())
+        tarball.extractall(self.unpack_dir, members = members)
+        if self.post_fetch is not None:
+            self.post_fetch(self)
         
 class FetchFFTWWindowsBinaries(setuptools.Command):
     user_options = [ ("url=", None, "URL of FFTW Windows binaries"),
@@ -395,59 +309,6 @@ class FetchFFTWWindowsBinaries(setuptools.Command):
                     "/def:%s.def" % os.path.join(self.install_dir, libname),
                     "/out:%s.lib" % os.path.join(self.install_dir, libname)]
             self.spawn(args)
-        
-class FetchVigraSource(setuptools.Command):
-    user_options = [ ("url=", None, "URL of Vigra source")]
-    command_name = "fetch_vigra"
-
-    def initialize_options(self):
-        self.url = "http://cellprofiler.org/linux/SOURCES/vigra-1.7.1-src.tar.gz"
-        self.build_lib = None
-        self.source_dir = None
-        self.vigra_dest = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.vigra_dest = os.path.join(self.build_lib, "vigra")
-        self.source_dir = os.path.join(self.vigra_dest, "vigra-1.7.1")
-        
-    def run(self):
-        self.announce("Fetching Vigra source")
-        request = requests.get(self.url, stream=False)
-        vigra_tar = tarfile.open(
-            "vigra-1.7.1.tar.gz",
-            fileobj =StringIO.StringIO(request.content))
-        vigra_tar.extractall(self.vigra_dest)
-    
-class FetchIlastikSource(setuptools.Command):
-    user_options = [ ("url=", None, "URL of Ilastik source")]
-    command_name = "fetch_ilastik"
-    
-    def initialize_options(self):
-        self.url = \
-            "http://cellprofiler.org/linux/SOURCES/ilastik-v0.5.05.tar.gz"
-        self.build_lib = None
-        self.source_dir = None
-        self.ilastik_dest = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-
-        self.announce("Using URL=%s" % self.url, level=2)
-        self.ilastik_dest = os.path.join(self.build_lib, "ilastik")
-        self.source_dir = os.path.join(self.ilastik_dest, "ilastik-v0.5.05")
-        
-    def run(self):
-        self.announce("Fetching Ilastik source")
-        request = requests.get(self.url, stream=False)
-        ilastik_tar = tarfile.open(
-            "ilastik-v0.5.05.tar.gz",
-            fileobj =StringIO.StringIO(request.content))
-        ilastik_tar.extractall(self.ilastik_dest)
         
 class BuildLibhdf5(BuildWithCMake):
     def initialize_options(self):
@@ -500,17 +361,42 @@ class BuildH5Py(setuptools.Command):
     def initialize_options(self):
         self.hdf5 = None
         self.source_dir = None
+        self.temp_dir = None
+        self.szip_install_dir = None
+        self.zlib_install_dir = None
         
     def finalize_options(self):
         if self.hdf5 is None:
             self.set_undefined_options(
                 'build_libhdf5', ('install_dir', 'hdf5'))
+        if self.szip_install_dir is None:
+            self.set_undefined_options(
+                'build_szip', ('install_dir', 'szip_install_dir'))
+        if self.zlib_install_dir is None:
+            self.set_undefined_options(
+                'build_zlib', ('install_dir', 'zlib_install_dir'))
         if self.source_dir is None:
             self.set_undefined_options(
                 'fetch_h5py', ('source_dir', 'source_dir'))
+        if self.temp_dir is None:
+            self.temp_dir = os.path.join(os.path.dirname(self.source_dir), "tmp")
         
     def run(self):
         hdf5 = os.path.abspath(self.hdf5)
+        for directory, ext in (('bin', 'dll'), ('lib', 'lib')):
+            hdf5_dll = os.path.join(self.hdf5, directory, "hdf5."+ext)
+            hdf5_hl_dll = os.path.join(self.hdf5, directory, "hdf5_hl."+ext)
+            szip_dll = os.path.join(
+                self.szip_install_dir, directory, "szip."+ext)
+            zlib_dll = os.path.join(
+                self.zlib_install_dir, directory, "zlib."+ext)
+            for src, destfile in ((hdf5_dll, "h5py_hdf5."+ext),
+                                  (hdf5_hl_dll, "h5py_hdf5_hl."+ext),
+                                  (szip_dll, "szip.dll"+ext),
+                                  (zlib_dll, "zlib.dll"+ext)):
+                dest = os.path.join(self.hdf5, directory, destfile)
+                self.copy_file(src, dest)
+        
         old_curdir = os.path.abspath(os.curdir)
         os.chdir(os.path.abspath(self.source_dir))
         try:
@@ -646,7 +532,7 @@ class BuildVigra(BuildWithCMake):
             ('boost_src', 'boost_src'))
         if is_win:
             self.set_undefined_options(
-                'fetch_fftw_binaries', ('install_dir', 'fftw_install_dir'))
+                'fetch_fftw_binaries', ('source_dir', 'fftw_install_dir'))
             
         else:
             self.set_undefined_options(
@@ -809,14 +695,14 @@ class BuildIlastik(distutils.command.build.build):
             return True
         
     sub_commands = distutils.command.build.build.sub_commands + \
-        [(FetchZlibSource.command_name, None),
+        [('fetch_zlib', None),
          ('build_zlib', None),
-         (FetchSZipSource.command_name, None),
+         ('fetch_szip', None),
          ('build_szip', None),
-         (FetchLibHDF5Source.command_name, None),
+         ('fetch_libhdf5', None),
          ('build_libhdf5', None),
-         (FetchH5PySource.command_name, needs_h5py),
-         (BuildH5Py.command_name, needs_h5py),
+         ('fetch_h5py', needs_h5py),
+         ('build_h5py', needs_h5py),
          ('fetch_boost', None),
          ('build_boost', None),
          ('fetch_vigra', None),
@@ -831,18 +717,68 @@ class BuildIlastik(distutils.command.build.build):
     sub_commands += [         
          ('fetch_vigra', None)]
     
-            
-        
+def patch_szip(cmd):
+    '''Patch the CMakeLists file to include ricehdf.h'''
+    expected_hash = 'fb8f11ef336e8d0a4d306aa479907979'
+    path = os.path.join(cmd.source_dir, "src", "CMakeLists.txt")
+    h = hashlib.md5(open(path, "rb").read())
+    if h.hexdigest() == expected_hash:
+        #
+        # SZip CMake needs patching. It excludes ricehdf.h
+        #
+        handle, filename = tempfile.mkstemp(suffix=".h")
+        fd = os.fdopen(handle, "w")
+        with open(path) as fdsrc:
+            for i, line in enumerate(fdsrc):
+                line_number = i+1
+                if line_number >= 19 and line_number < 22:
+                    # These are private header files and ricehdf.h
+                    # is the only one. So we delete the section.
+                    if line_number == 20:
+                        # This is the line that includes ricehdf.h
+                        saved = line
+                    continue
+                elif line_number == 24:
+                    # put the line in the public headers
+                    fd.write(saved)
+                elif line_number == 28:
+                    # remove the private headers from the library def
+                    line = line.replace("${SZIP_HDRS} ", "")
+                fd.write(line)
+        fd.close()
+        shutil.copyfile(filename, path)
 
+def filter_boost(name):
+    '''Filter out the image files in order to reduce the tarball size
+    
+    tarfile chokes, running on Windows, while unpacking random image files
+    '''
+    return not any([name.lower().endswith(ext) 
+                   for ext in (".png", ".html")])
+        
+def build_fftw_libs(cmd):
+    '''Build the Windows .lib files for the FFTW dlls'''
+    for libname in ("libfftw3-3", "libfftw3f-3", "libfftw3l-3"):
+        args = ["lib", "/machine:x64", 
+                "/def:%s.def" % os.path.join(cmd.source_dir, libname),
+                "/out:%s.lib" % os.path.join(cmd.source_dir, libname)]
+        cmd.spawn(args)
+    
+try:
+    import h5py
+    libhdf5_version = h5py.version.hdf5_version
+except:
+    libhdf5_version = "1.8.11"
 
 try:
     command_classes = dict([(cls.command_name, cls) for cls in (
-            BuildIlastik, FetchLibHDF5Source, FetchSZipSource,
-            FetchZlibSource, FetchBoostSource, FetchIlastikSource,
-            FetchFFTWSource, FetchFFTWWindowsBinaries, FetchVigraSource,
-            FetchH5PySource, BuildH5Py)])
+            BuildIlastik, BuildH5Py)])
     for build_class in ('build_zlib', 'build_szip'):
         command_classes[build_class] = BuildWithCMake
+    for fetch_command in ('fetch_libhdf5', 'fetch_szip', 'fetch_zlib',
+                          'fetch_boost', 'fetch_ilastik', 'fetch_fftw',
+                          'fetch_fftw_binaries', 'fetch_vigra', 'fetch_h5py'):
+        command_classes[fetch_command] = FetchSource
     command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_boost'] = BuildBoost
     command_classes['build_vigra'] = BuildVigra
@@ -850,13 +786,13 @@ try:
         cmdclass=command_classes,
         options = {
             'build_zlib': dict(
-                src_command=FetchZlibSource.command_name,
+                src_command='fetch_zlib',
                 extra_cmake_options = ["-DBUILD_SHARED_LIBS:BOOL=\"1\""]),
             'build_szip': dict(
-                src_command=FetchSZipSource.command_name,
+                src_command='fetch_szip',
                 extra_cmake_options = ["-DBUILD_SHARED_LIBS:BOOL=\"1\""]),
             'build_libhdf5': dict(
-                src_command=FetchLibHDF5Source.command_name,
+                src_command='fetch_libhdf5',
                 extra_cmake_options = [
                     '-DHDF5_ENABLE_SZIP_ENCODING:BOOL="1"',
                     '-DBUILD_SHARED_LIBS:BOOL="1"',
@@ -870,12 +806,52 @@ try:
                     '-DCPACK_SOURCE_ZIP:BOOL="0"',
                     "-DBUILD_SHARED_LIBS:BOOL=\"1\""]),
             'build_vigra': dict(
-                src_command=FetchVigraSource.command_name,
+                src_command='fetch_vigra',
                 extra_cmake_options = [
                     '-DCPACK_SOURCE_ZIP:BOOL="0"',
                     '-DCPACK_SOURCE_7Z:BOOL="0"']
-            )
-            }
+            ),
+            'fetch_szip': {
+                'version': '2.1',
+                'url': "https://www.hdfgroup.org/ftp/lib-external/{package_name}/{version}/src/{package_name}-{version}.tar.gz",
+                'post_fetch': patch_szip
+            }, 
+            'fetch_zlib': {
+                'version': '1.2.5',
+                'url': "https://www.hdfgroup.org/ftp/lib-external/{package_name}/{package_name}-{version}.tar.gz"
+            },
+            'fetch_libhdf5': {
+                'package_name': 'hdf5',
+                'version': libhdf5_version,
+                'url': "https://www.hdfgroup.org/ftp/HDF5/releases/{package_name}-{version}/src/{package_name}-{version}.zip"
+                },
+            'fetch_boost': {
+                'version': '1.53.0',
+                'full_name': '{package_name}_1_53_0',
+                'url': "http://cellprofiler.org/linux/SOURCES/{full_name}.tar.bz2",
+                'member_filter': filter_boost
+                },
+            'fetch_h5py': {
+                'version': '2.3.1'
+                },
+            'fetch_fftw': {
+                'version': '3.2.2',
+                'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}.tar.gz"
+                },
+            'fetch_fftw_binaries': {
+                'version': "3.3.2",
+                'url': "ftp://ftp.fftw.org/pub/{package_name}/{package_name}-{version}-dll64.zip",
+                'post_fetch': build_fftw_libs
+                },
+            'fetch_vigra': {
+                'version': '1.7.1',
+                'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}-src.tar.gz"
+                },
+            'fetch_ilastik': {
+                'version': 'v0.5.05',
+                'url':"http://cellprofiler.org/linux/SOURCES/{full_name}.tar.gz"
+                }
+        }
     )
 except:
     import traceback
