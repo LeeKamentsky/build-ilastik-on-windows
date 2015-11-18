@@ -5,6 +5,7 @@ addons:
       - python-qt4
       - python-virtualenv
       - cmake
+      - zlib1g-dev
       
 cache:
   apt: true
