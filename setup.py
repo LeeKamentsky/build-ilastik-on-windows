@@ -5,6 +5,7 @@ import distutils.sysconfig
 import distutils.spawn
 import hashlib
 import os
+import re
 import requests
 import shutil
 import StringIO
@@ -751,6 +752,25 @@ def build_fftw_libs(cmd):
                 "/def:%s.def" % os.path.join(cmd.source_dir, libname),
                 "/out:%s.lib" % os.path.join(cmd.source_dir, libname)]
         cmd.spawn(args)
+        
+def patch_vigra(cmd):
+    '''Patch Vigra to deal with future issues
+    
+    missing ptrdiff_t
+    https://gcc.gnu.org/gcc-4.6/porting_to.html
+    '''
+    config_hxx_path = os.path.join(
+        cmd.source_dir, "include", "vigra", "config.hxx")
+    pattern = r"\s*#include\s+<cstddef>"
+    with open(config_hxx_path, "r") as fdsrc:
+        lines = fdsrc.readlines()
+    if any([re.search(pattern, line) for line in lines]):
+        return
+    
+    lines.insert(len(lines) - 2, "#include <cstddef>\n")
+    with open(config_hxx_path, "w") as fd:
+        fd.write("".join(lines))
+        
     
 try:
     import h5py
@@ -835,7 +855,8 @@ try:
                 },
             'fetch_vigra': {
                 'version': '1.7.1',
-                'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}-src.tar.gz"
+                'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}-src.tar.gz",
+                'post_fetch': patch_vigra
                 },
             'fetch_ilastik': {
                 'version': 'v0.5.05',
