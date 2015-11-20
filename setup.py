@@ -520,13 +520,19 @@ class BuildVigra(BuildWithCMake):
         
     def finalize_options(self):
         BuildWithCMake.finalize_options(self)
+        self.set_undefined_options(
+            'build_szip', ('install_dir', 'szip_install_dir'))
+        if self.szip_library is None:
+            self.szip_library = os.path.join(
+                self.szip_install_dir, 'lib', 'szip.%s' % lib_ext)
+        self.extra_cmake_options.append(
+        '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
+        
         if is_win:
             self.set_undefined_options(
                 'build_zlib', ('install_dir', 'zlib_install_dir'))
             self.set_undefined_options(
                 'build_libhdf5', ('install_dir', 'libhdf5_install_dir'))
-            self.set_undefined_options(
-                'build_szip', ('install_dir', 'szip_install_dir'))
             self.set_undefined_options(
                 'build_boost', 
                 ('install_dir', 'boost_install_dir'),
@@ -602,12 +608,6 @@ class BuildVigra(BuildWithCMake):
                 self.boost_include_dir = os.path.abspath(self.boost_src)
             self.extra_cmake_options.append(
                 '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
-        
-        if self.szip_library is None:
-            self.szip_library = os.path.join(
-                self.szip_install_dir, 'lib', 'szip.%s' % lib_ext)
-        self.extra_cmake_options.append(
-        '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
         
         
     def run(self):
