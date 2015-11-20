@@ -4,9 +4,9 @@ addons:
       - python-numpy
       - python-qt4
       - python-virtualenv
-      - cmake
-      - zlib1g-dev
-      
+      - cmake      
+      - libhdf5-dev
+      - libboost-python-dev
 cache:
   apt: true
   directories:
@@ -28,7 +28,10 @@ virtualenv:
   system_site_packages: true
 
 install:
+  - pip install h5py
   - pip install -r requirements.txt
 
 script:
-  - python setup.py build
+  - python setup.py fetch_vigra build_vigra
+  - python setup.py fetch_ilastik install_ilastik
+  

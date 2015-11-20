@@ -704,18 +704,17 @@ class BuildIlastik(distutils.command.build.build):
          ('fetch_h5py', needs_h5py),
          ('build_h5py', needs_h5py),
          ('fetch_boost', None),
-         ('build_boost', None),
-         ('fetch_vigra', None),
-         ('build_vigra', None),
-         ('fetch_ilastik', None),
-         ('install_ilastik', None)]
+         ('build_boost', None)]
     
     if is_win:
         sub_commands.append(('fetch_fftw_binaries', None))
     else:
         sub_commands += [('fetch_fftw', None), ('build_fftw', None)]
-    sub_commands += [         
-         ('fetch_vigra', None)]
+    sub_commands += [
+        ('fetch_vigra', None),
+        ('build_vigra', None),
+        ('fetch_ilastik', None),
+        ('install_ilastik', None)]
     
 def patch_szip(cmd):
     '''Patch the CMakeLists file to include ricehdf.h'''
@@ -839,6 +838,7 @@ try:
                 'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}.tar.gz"
                 },
             'fetch_fftw_binaries': {
+                'package_name': 'fftw',
                 'version': "3.3.2",
                 'url': "ftp://ftp.fftw.org/pub/{package_name}/{package_name}-{version}-dll64.zip",
                 'post_fetch': build_fftw_libs
