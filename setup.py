@@ -54,7 +54,7 @@ class BuildWithCMake(setuptools.Command):
         self.extra_cmake_options = []
         self.install_dir = None
         self.install_root = None
-        self.use_custom_install_dir = True
+        self.do_install = True
         
     def finalize_options(self):
         self.set_undefined_options(
@@ -104,7 +104,7 @@ class BuildWithCMake(setuptools.Command):
     def run(self):
         cmake_args = [self.cmake]
         cmake_args += ["-G", self.get_cmake_generator()]
-        if self.use_custom_install_dir() and is_win:
+        if self.do_install and is_win:
             cmake_args.append(
                 '"-DCMAKE_INSTALL_PREFIX:PATH=%s"' % 
                 os.path.abspath(self.install_root))
@@ -131,12 +131,13 @@ class BuildWithCMake(setuptools.Command):
                 raise
             os.chdir(target_dir)
             self.spawn([self.get_make_program()])
-            if (not self.use_custom_install_dir) or is_win:
-                self.spawn([self.get_make_program(), "install"])
-            else:
-                self.spawn([self.get_make_program(),
-                            "DESTDIR=%s" % os.path.abspath(self.install_root),
-                            "install"])
+            if self.do_install:
+                if is_win:
+                    self.spawn([self.get_make_program(), "install"])
+                else:
+                    self.spawn([self.get_make_program(),
+                                "DESTDIR=%s" % os.path.abspath(self.install_root),
+                                "install"])
         finally:
             os.chdir(old_dir)
 
@@ -228,9 +229,13 @@ class FetchSource(setuptools.Command, object):
         if self.unpack_dir is None:
             self.unpack_dir = os.path.join(
                 self.build_lib, self.package_name)
+        else:
+            self.unpack_dir = self.unpack_dir.format(**self.__dict__)
         if self.source_dir is None:
             self.source_dir = os.path.join(
                 self.unpack_dir, self.full_name)
+        else:
+            self.source_dir = self.source_dir.format(**self.__dict__)
         
     def run(self):
         self.announce("Fetching " + self.url)
@@ -239,10 +244,19 @@ class FetchSource(setuptools.Command, object):
                               up.path.rpartition('/')[-1])
         if not os.path.exists(self.source_dir):
             os.makedirs(self.source_dir)
-        request = requests.get(self.url, stream=True)
-        with open(target, "wb") as fd:
-            for chunk in request.iter_content(chunk_size = 65536):
-                fd.write(chunk)
+        if up.scheme == 'ftp':
+            fdsrc = urllib2.urlopen(self.url)
+            with open(target, "wb") as fd:
+                while True:
+                    data = fdsrc.read()
+                    if len(data) == 0:
+                        break
+                    fd.write(data)
+        else:
+            request = requests.get(self.url, stream=True)
+            with open(target, "wb") as fd:
+                for chunk in request.iter_content(chunk_size = 65536):
+                    fd.write(chunk)
         members = None
         if target.lower().endswith(".zip"):
             tarball = zipfile.ZipFile(target)
@@ -605,42 +619,45 @@ class BuildVigra(BuildWithCMake):
         
     def run(self):
         BuildWithCMake.run(self)
+        old_cwd = os.path.abspath(os.curdir)
+        os.chdir(os.path.abspath(self.target_dir, "vigranumpy"))
+        try:
+            self.spawn(["python", "setup.py", "build", "install"])
+        finally:
+            os.chdir(old_cwd)
         #
         # Install dependent libraries in the Vigra directory
         #
-        target = os.path.join(distutils.sysconfig.get_python_lib(), "vigra")
-        lib_dir = "bin" if is_win else lib
-        for src in self.boost_python_library, self.hdf5_core_library, \
-            self.hdf5_hl_library, self.szip_library, self.zlib_library:
-            if is_win:
-                root, leaf = os.path.split(src)
-                leafroot, leafext = os.path.splitext(leaf)
-                for loc in "bin", "lib":
-                    src = os.path.join(
-                        os.path.dirname(root), loc, leafroot+".dll")
-                    if os.path.exists(src):
-                        break
+        if is_win:
+            target = os.path.join(distutils.sysconfig.get_python_lib(), "vigra")
+            lib_dir = "bin" if is_win else lib
+            for src in self.boost_python_library, self.hdf5_core_library, \
+                self.hdf5_hl_library, self.szip_library, self.zlib_library:
+                if is_win:
+                    root, leaf = os.path.split(src)
+                    leafroot, leafext = os.path.splitext(leaf)
+                    for loc in "bin", "lib":
+                        src = os.path.join(
+                            os.path.dirname(root), loc, leafroot+".dll")
+                        if os.path.exists(src):
+                            break
+                target_file = os.path.join(target, os.path.split(src)[1])
+                self.copy_file(src, target_file)
+            #
+            # vigraimpex.dll is in the build directory at
+            # src/impex
+            #
+            src = os.path.join(
+                self.target_dir, "src", "impex", "vigraimpex." + dll_ext)
             target_file = os.path.join(target, os.path.split(src)[1])
             self.copy_file(src, target_file)
-        #
-        # vigraimpex.dll is in the build directory at
-        # src/impex
-        #
-        src = os.path.join(
-            self.target_dir, "src", "impex", "vigraimpex." + dll_ext)
-        target_file = os.path.join(target, os.path.split(src)[1])
-        self.copy_file(src, target_file)
-        #
-        # libfftw
-        #
-        src = os.path.splitext(self.fftw_library)[0] + "." + dll_ext
-        target_file = os.path.join(target, os.path.split(src)[1])
-        self.copy_file(src, target_file)
-    
-    def use_custom_install_dir(self):
-        '''Install Vigra to Python'''
-        return False
-        
+            #
+            # libfftw
+            #
+            src = os.path.splitext(self.fftw_library)[0] + "." + dll_ext
+            target_file = os.path.join(target, os.path.split(src)[1])
+            self.copy_file(src, target_file)
+            
 class InstallIlastik(setuptools.Command):
     command_name = 'install_ilastik'
     user_options = []
@@ -811,7 +828,7 @@ try:
                 extra_cmake_options = [
                     '-DCPACK_SOURCE_ZIP:BOOL="0"',
                     '-DCPACK_SOURCE_7Z:BOOL="0"'],
-                use_custom_install_dir = False
+                do_install = False
             ),
             'fetch_szip': {
                 'version': '2.1',
@@ -844,6 +861,8 @@ try:
                 'package_name': 'fftw',
                 'version': "3.3.2",
                 'url': "ftp://ftp.fftw.org/pub/{package_name}/{package_name}-{version}-dll64.zip",
+                'unpack_dir': '{build_lib}/{package_name}/{full_name}',
+                'source_dir': '{unpack_dir}',
                 'post_fetch': build_fftw_libs
                 },
             'fetch_vigra': {
