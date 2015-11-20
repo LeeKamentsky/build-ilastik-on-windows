@@ -664,7 +664,7 @@ class InstallIlastik(setuptools.Command):
         old_curdir = os.path.abspath('.')
         os.chdir(os.path.abspath(self.ilastik_src))
         try:
-            self.spawn(['python', 'setup.py'])
+            self.spawn(['python', 'setup.py', 'build', 'install'])
         finally:
             os.chdir(old_curdir)
         
