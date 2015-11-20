@@ -5,6 +5,7 @@ addons:
       - cython
       - libhdf5-dev
       - libboost-python-dev
+      - libfftw3-dev
       - python-h5py
       - python-numpy
       - python-qt4

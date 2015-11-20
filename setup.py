@@ -520,52 +520,88 @@ class BuildVigra(BuildWithCMake):
         
     def finalize_options(self):
         BuildWithCMake.finalize_options(self)
-        self.set_undefined_options(
-            'build_zlib', ('install_dir', 'zlib_install_dir'))
-        self.set_undefined_options(
-            'build_libhdf5', ('install_dir', 'libhdf5_install_dir'))
-        self.set_undefined_options(
-            'build_szip', ('install_dir', 'szip_install_dir'))
-        self.set_undefined_options(
-            'build_boost', 
-            ('install_dir', 'boost_install_dir'),
-            ('boost_src', 'boost_src'))
         if is_win:
+            self.set_undefined_options(
+                'build_zlib', ('install_dir', 'zlib_install_dir'))
+            self.set_undefined_options(
+                'build_libhdf5', ('install_dir', 'libhdf5_install_dir'))
+            self.set_undefined_options(
+                'build_szip', ('install_dir', 'szip_install_dir'))
+            self.set_undefined_options(
+                'build_boost', 
+                ('install_dir', 'boost_install_dir'),
+                ('boost_src', 'boost_src'))
             self.set_undefined_options(
                 'fetch_fftw_binaries', ('source_dir', 'fftw_install_dir'))
             
-        else:
-            self.set_undefined_options(
-                'build_fftw', ('install_dir', 'fftw_install_dir'))
-        
-        if self.zlib_library is None:
-            if is_win:
+            if self.zlib_library is None:
                 zlib = 'zlib.' + lib_ext
-            else:
-                zlib = 'libz.' + lib_ext
             self.zlib_library = os.path.join(
                 self.zlib_install_dir, 'lib', zlib)
-        self.extra_cmake_options.append(
-            '"-DZLIB_LIBRARY:FILEPATH=%s"' % self.zlib_library)
-        self.extra_cmake_options.append(
-            '"-DHDF5_Z_LIBRARY:FILEPATH=%s"' % self.zlib_library)
+            self.extra_cmake_options.append(
+                '"-DZLIB_LIBRARY:FILEPATH=%s"' % self.zlib_library)
+            self.extra_cmake_options.append(
+                '"-DHDF5_Z_LIBRARY:FILEPATH=%s"' % self.zlib_library)
         
-        if self.zlib_include_dir is None:
-            self.zlib_include_dir = os.path.join(
-                self.zlib_install_dir, "include")
-        self.extra_cmake_options.append(
-            '"-DZLIB_INCLUDE_DIR:PATH=%s"' % self.zlib_include_dir)
+            if self.zlib_include_dir is None:
+                self.zlib_include_dir = os.path.join(
+                    self.zlib_install_dir, "include")
+            self.extra_cmake_options.append(
+                '"-DZLIB_INCLUDE_DIR:PATH=%s"' % self.zlib_include_dir)
         
-        if self.hdf5_core_library is None:
-            self.hdf5_core_library = os.path.join(
-                self.libhdf5_install_dir, 'lib', "hdf5.%s" % lib_ext)
-        self.extra_cmake_options.append(
-            '"-DHDF5_CORE_LIBRARY:FILEPATH=%s"' % self.hdf5_core_library)
-        if self.hdf5_hl_library is None:
-            self.hdf5_hl_library = os.path.join(
-                self.libhdf5_install_dir, "lib", "hdf5_hl.%s" % lib_ext)
-        self.extra_cmake_options.append(
-            '"-DHDF5_HL_LIBRARY:FILEPATH=%s"' % self.hdf5_hl_library)
+            if self.hdf5_core_library is None:
+                self.hdf5_core_library = os.path.join(
+                    self.libhdf5_install_dir, 'lib', "hdf5.%s" % lib_ext)
+            self.extra_cmake_options.append(
+                '"-DHDF5_CORE_LIBRARY:FILEPATH=%s"' % self.hdf5_core_library)
+            if self.hdf5_hl_library is None:
+                self.hdf5_hl_library = os.path.join(
+                    self.libhdf5_install_dir, "lib", "hdf5_hl.%s" % lib_ext)
+            self.extra_cmake_options.append(
+                '"-DHDF5_HL_LIBRARY:FILEPATH=%s"' % self.hdf5_hl_library)
+            if self.hdf5_include_dir is None:
+                self.hdf5_include_dir = os.path.join(
+                    self.libhdf5_install_dir, "include")
+            self.extra_cmake_options.append(
+                '"-DHDF5_INCLUDE_DIR:PATH=%s"' % self.hdf5_include_dir)
+            
+            if self.fftw_include_dir is None:
+                self.fftw_include_dir = os.path.join(
+                    self.fftw_install_dir)
+            self.extra_cmake_options.append(
+                '"-DFFTW3_INCLUDE_DIR:PATH=%s"' % 
+                os.path.abspath(self.fftw_install_dir))
+            
+            if self.fftw_library is None:
+                self.fftw_library = os.path.join(
+                    self.fftw_install_dir, "libfftw3-3.%s" % lib_ext)
+            self.extra_cmake_options.append(
+                '"-DFFTW3_LIBRARY:FILEPATH=%s"' % 
+                os.path.abspath(self.fftw_library))
+    
+            #
+            # BOOST configuration
+            #
+            self.extra_cmake_options.append(
+                '"-DBOOST_ROOT:PATH=%s"' % os.path.abspath(self.boost_src))
+            vcver = int(get_build_version()) * 10
+            boost_libname = "boost_python-vc%d-mt-1_53.lib" % vcver
+            if self.boost_library_dir is None:
+                self.boost_library_dir = os.path.abspath(os.path.join(
+                    self.boost_install_dir, "lib"))
+            if self.boost_python_library is None:
+                self.boost_python_library = os.path.join(
+                    self.boost_library_dir, boost_libname)
+            self.extra_cmake_options.append(
+                '"-DBoost_PYTHON_LIBRARY_RELEASE:FILEPATH=%s"' % 
+                self.boost_python_library)
+            self.extra_cmake_options.append(
+                '"-DBoost_LIBRARY_DIR:PATH=%s"' % self.boost_library_dir)
+            
+            if self.boost_include_dir is None:
+                self.boost_include_dir = os.path.abspath(self.boost_src)
+            self.extra_cmake_options.append(
+                '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
         
         if self.szip_library is None:
             self.szip_library = os.path.join(
@@ -573,52 +609,6 @@ class BuildVigra(BuildWithCMake):
         self.extra_cmake_options.append(
         '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
         
-        if self.hdf5_include_dir is None:
-            self.hdf5_include_dir = os.path.join(
-                self.libhdf5_install_dir, "include")
-        self.extra_cmake_options.append(
-            '"-DHDF5_INCLUDE_DIR:PATH=%s"' % self.hdf5_include_dir)
-        
-        if self.fftw_include_dir is None:
-            self.fftw_include_dir = os.path.join(
-                self.fftw_install_dir)
-        self.extra_cmake_options.append(
-            '"-DFFTW3_INCLUDE_DIR:PATH=%s"' % 
-            os.path.abspath(self.fftw_install_dir))
-        
-        if self.fftw_library is None:
-            self.fftw_library = os.path.join(
-                self.fftw_install_dir, "libfftw3-3.%s" % lib_ext)
-        self.extra_cmake_options.append(
-            '"-DFFTW3_LIBRARY:FILEPATH=%s"' % 
-            os.path.abspath(self.fftw_library))
-
-        #
-        # BOOST configuration
-        #
-        self.extra_cmake_options.append(
-            '"-DBOOST_ROOT:PATH=%s"' % os.path.abspath(self.boost_src))
-        if is_win:
-            vcver = int(get_build_version()) * 10
-            boost_libname = "boost_python-vc%d-mt-1_53.lib" % vcver
-        else:
-            raise NotImplementedError("Need to manufacture library name for other platforms")
-        if self.boost_library_dir is None:
-            self.boost_library_dir = os.path.abspath(os.path.join(
-                self.boost_install_dir, "lib"))
-        if self.boost_python_library is None:
-            self.boost_python_library = os.path.join(
-                self.boost_library_dir, boost_libname)
-        self.extra_cmake_options.append(
-            '"-DBoost_PYTHON_LIBRARY_RELEASE:FILEPATH=%s"' % 
-            self.boost_python_library)
-        self.extra_cmake_options.append(
-            '"-DBoost_LIBRARY_DIR:PATH=%s"' % self.boost_library_dir)
-        
-        if self.boost_include_dir is None:
-            self.boost_include_dir = os.path.abspath(self.boost_src)
-        self.extra_cmake_options.append(
-            '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
         
     def run(self):
         BuildWithCMake.run(self)
@@ -695,21 +685,20 @@ class BuildIlastik(distutils.command.build.build):
             return True
         
     sub_commands = distutils.command.build.build.sub_commands + \
-        [('fetch_zlib', None),
-         ('build_zlib', None),
-         ('fetch_szip', None),
-         ('build_szip', None),
-         ('fetch_libhdf5', None),
-         ('build_libhdf5', None),
-         ('fetch_h5py', needs_h5py),
-         ('build_h5py', needs_h5py),
-         ('fetch_boost', None),
-         ('build_boost', None)]
+        [('fetch_szip', None),
+         ('build_szip', None)]
     
     if is_win:
-        sub_commands.append(('fetch_fftw_binaries', None))
-    else:
-        sub_commands += [('fetch_fftw', None), ('build_fftw', None)]
+        sub_commands += [
+            ('fetch_zlib', None),
+            ('build_zlib', None),
+            ('fetch_libhdf5', None),
+            ('build_libhdf5', None),
+            ('fetch_h5py', needs_h5py),
+            ('build_h5py', needs_h5py),
+            ('fetch_boost', None),
+            ('build_boost', None),
+            ('fetch_fftw_binaries', None)]
     sub_commands += [
         ('fetch_vigra', None),
         ('build_vigra', None),
@@ -778,8 +767,8 @@ try:
                           'fetch_boost', 'fetch_ilastik', 'fetch_fftw',
                           'fetch_fftw_binaries', 'fetch_vigra', 'fetch_h5py'):
         command_classes[fetch_command] = FetchSource
-    command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_boost'] = BuildBoost
+    command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_vigra'] = BuildVigra
     command_classes['install_ilastik'] = InstallIlastik
     result = setuptools.setup(
