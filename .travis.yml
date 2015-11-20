@@ -37,6 +37,5 @@ install:
   - pip install wheel
 
 script:
-  - python setup.py fetch_vigra build_vigra
-  - python setup.py fetch_ilastik install_ilastik
+  - python setup.py build install
   
