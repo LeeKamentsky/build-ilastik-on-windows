@@ -54,6 +54,7 @@ class BuildWithCMake(setuptools.Command):
         self.extra_cmake_options = []
         self.install_dir = None
         self.install_root = None
+        self.use_custom_install_dir = True
         
     def finalize_options(self):
         self.set_undefined_options(
@@ -99,16 +100,7 @@ class BuildWithCMake(setuptools.Command):
         if is_win:
             return "nmake"
         return "make"
-    
-    def use_custom_install_dir(self):
-        '''Should we honor the install directory or use the default?
-
-        Override this and return False if CMake should install to the
-        package's default location. Return True to install to a location
-        in the build tree.
-        '''
-        return True
-    
+        
     def run(self):
         cmake_args = [self.cmake]
         cmake_args += ["-G", self.get_cmake_generator()]
@@ -139,7 +131,7 @@ class BuildWithCMake(setuptools.Command):
                 raise
             os.chdir(target_dir)
             self.spawn([self.get_make_program()])
-            if (not self.use_custom_install_dir()) or is_win:
+            if (not self.use_custom_install_dir) or is_win:
                 self.spawn([self.get_make_program(), "install"])
             else:
                 self.spawn([self.get_make_program(),
@@ -818,7 +810,8 @@ try:
                 src_command='fetch_vigra',
                 extra_cmake_options = [
                     '-DCPACK_SOURCE_ZIP:BOOL="0"',
-                    '-DCPACK_SOURCE_7Z:BOOL="0"']
+                    '-DCPACK_SOURCE_7Z:BOOL="0"'],
+                use_custom_install_dir = False
             ),
             'fetch_szip': {
                 'version': '2.1',
