@@ -616,11 +616,47 @@ class BuildVigra(BuildWithCMake):
             self.extra_cmake_options.append(
                 '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
         
+    def rewrite_windows_setup(self, setup_directory):
+        #
+        # Vigra's CMake looks like it confuses .lib and .dll files
+        # Or maybe I am setting things up wrong
+        # Rewrite setup.py
+        #
+        setup_path = os.path.join(setup_directory, "setup.py")
+        with open(setup_path, "r") as fd:
+            lines = fd.readlines()
+        with open(setup_path, "w") as fd:
+            state = 'before'
+            for line in lines:
+                if state == 'before' and line.startswith('dlls = ['):
+                    state = 'during'
+                if state == 'during':
+                    line = line\
+                        .replace('/lib/', '/bin/')\
+                        .replace('.lib', '.dll')\
+                        .replace('/build/bin/', '/build/lib/')\
+                        .replace('/bin/boost_python', '/lib/boost_python')
+                    if line.strip().endswith("]"):
+                        state = 'whereisctypes'
+                if state == 'whereisctypes':
+                    # Get rid of the search using ctypes
+                    index = line.find('ctypes.util.find')
+                    if index >= 0:
+                        line = line[:index] + "d\n"
+                        state = 'no-pyqt'
+                if state == 'no-pyqt':
+                    index = line.find(", 'vigra.pyqt'")
+                    if index > 0:
+                        line = line[:index] + line.strip()[-2:] + "\n"
+                fd.write(line)
         
     def run(self):
         BuildWithCMake.run(self)
+        setup_directory = os.path.abspath(os.path.join(self.target_dir, "vigranumpy"))
+        if is_win:
+            self.rewrite_windows_setup(setup_directory)
         old_cwd = os.path.abspath(os.curdir)
-        os.chdir(os.path.abspath(self.target_dir, "vigranumpy"))
+        os.chdir(setup_directory)
         try:
             self.spawn(["python", "setup.py", "build", "install"])
         finally:
