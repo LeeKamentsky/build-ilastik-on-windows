@@ -781,6 +781,7 @@ try:
     command_classes['build_libhdf5'] = BuildLibhdf5
     command_classes['build_boost'] = BuildBoost
     command_classes['build_vigra'] = BuildVigra
+    command_classes['install_ilastik'] = InstallIlastik
     result = setuptools.setup(
         cmdclass=command_classes,
         options = {
