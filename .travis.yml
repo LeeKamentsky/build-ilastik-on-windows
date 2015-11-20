@@ -1,12 +1,16 @@
 addons:
   apt:
     packages:
-      - python-numpy
-      - python-qt4
-      - python-virtualenv
       - cmake      
+      - cython
       - libhdf5-dev
       - libboost-python-dev
+      - python-h5py
+      - python-numpy
+      - python-qt4
+      - python-requests
+      - python-setuptools
+      - python-virtualenv
 cache:
   apt: true
   directories:
@@ -28,8 +32,8 @@ virtualenv:
   system_site_packages: true
 
 install:
-  - pip install h5py
-  - pip install -r requirements.txt
+  - pip install --upgrade pip
+  - pip install wheel
 
 script:
   - python setup.py fetch_vigra build_vigra
