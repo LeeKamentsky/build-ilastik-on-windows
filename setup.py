@@ -661,38 +661,6 @@ class BuildVigra(BuildWithCMake):
             self.spawn(["python", "setup.py", "build", "install"])
         finally:
             os.chdir(old_cwd)
-        #
-        # Install dependent libraries in the Vigra directory
-        #
-        if is_win:
-            target = os.path.join(distutils.sysconfig.get_python_lib(), "vigra")
-            lib_dir = "bin" if is_win else lib
-            for src in self.boost_python_library, self.hdf5_core_library, \
-                self.hdf5_hl_library, self.szip_library, self.zlib_library:
-                if is_win:
-                    root, leaf = os.path.split(src)
-                    leafroot, leafext = os.path.splitext(leaf)
-                    for loc in "bin", "lib":
-                        src = os.path.join(
-                            os.path.dirname(root), loc, leafroot+".dll")
-                        if os.path.exists(src):
-                            break
-                target_file = os.path.join(target, os.path.split(src)[1])
-                self.copy_file(src, target_file)
-            #
-            # vigraimpex.dll is in the build directory at
-            # src/impex
-            #
-            src = os.path.join(
-                self.target_dir, "src", "impex", "vigraimpex." + dll_ext)
-            target_file = os.path.join(target, os.path.split(src)[1])
-            self.copy_file(src, target_file)
-            #
-            # libfftw
-            #
-            src = os.path.splitext(self.fftw_library)[0] + "." + dll_ext
-            target_file = os.path.join(target, os.path.split(src)[1])
-            self.copy_file(src, target_file)
             
 class InstallIlastik(setuptools.Command):
     command_name = 'install_ilastik'

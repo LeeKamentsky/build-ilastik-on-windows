@@ -6,8 +6,6 @@ addons:
       - libhdf5-dev
       - libboost-python-dev
       - libfftw3-dev
-      - python-h5py
-      - python-numpy
       - python-qt4
       - python-requests
       - python-setuptools
@@ -35,6 +33,8 @@ virtualenv:
 install:
   - pip install --upgrade pip
   - pip install wheel
+  - pip install numpy
+  - pip install h5py
 
 script:
   - python setup.py build install
