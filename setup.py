@@ -662,14 +662,33 @@ class BuildVigra(BuildWithCMake):
     def run(self):
         BuildWithCMake.run(self)
         setup_directory = os.path.abspath(os.path.join(self.target_dir, "vigranumpy"))
-        if is_win:
-            self.rewrite_windows_setup(setup_directory)
+        #if is_win:
+        #    self.rewrite_windows_setup(setup_directory)
         old_cwd = os.path.abspath(os.curdir)
         os.chdir(setup_directory)
         try:
-            self.spawn(["python", "setup.py", "build", "install"])
+            self.spawn(["nmake", "install"])
         finally:
             os.chdir(old_cwd)
+	#
+	# This is a non-standard way of putting the DLLs into the
+	# vigra package, but the whole install process is very non-standard
+	#
+	site_packages = distutils.sysconfig.get_python_lib()
+	vigra_target = os.path.join(site_packages, "vigra")
+	boost_python_dll = os.path.splitext(self.boost_python_library)[0]+".dll"
+	fftw_dll = os.path.splitext(self.fftw_library)[0] + ".dll"
+	szip_dll = os.path.join(self.szip_install_dir, "bin", "szip.dll")
+	hdf_dlls = [
+	    os.path.join(self.libhdf5_install_dir, "bin", libname+".dll")
+	    for libname in ("hdf5", "hdf5_hl")]
+	zlib_dll = os.path.join(self.zlib_install_dir, "bin", "zlib.dll")
+	all_dlls = [boost_python_dll, fftw_dll, szip_dll]
+	all_dlls += hdf_dlls
+	all_dlls.append(zlib_dll)
+	for dll_path in all_dlls:
+	    filename = os.path.split(dll_path)[1]
+	    self.copy_file(dll_path, os.path.join(vigra_target, filename))
             
 class InstallIlastik(setuptools.Command):
     command_name = 'install_ilastik'
