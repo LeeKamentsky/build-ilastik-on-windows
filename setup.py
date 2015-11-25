@@ -678,12 +678,14 @@ class BuildVigra(BuildWithCMake):
 	vigra_target = os.path.join(site_packages, "vigra")
 	boost_python_dll = os.path.splitext(self.boost_python_library)[0]+".dll"
 	fftw_dll = os.path.splitext(self.fftw_library)[0] + ".dll"
+	impex_dll = os.path.join(
+	    self.target_dir, "src", "impex", "vigraimpex.dll")
 	szip_dll = os.path.join(self.szip_install_dir, "bin", "szip.dll")
 	hdf_dlls = [
 	    os.path.join(self.libhdf5_install_dir, "bin", libname+".dll")
 	    for libname in ("hdf5", "hdf5_hl")]
 	zlib_dll = os.path.join(self.zlib_install_dir, "bin", "zlib.dll")
-	all_dlls = [boost_python_dll, fftw_dll, szip_dll]
+	all_dlls = [boost_python_dll, fftw_dll, impex_dll, szip_dll]
 	all_dlls += hdf_dlls
 	all_dlls.append(zlib_dll)
 	for dll_path in all_dlls:
