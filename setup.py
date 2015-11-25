@@ -35,9 +35,12 @@ if is_win:
     from distutils.msvc9compiler import get_build_version
     lib_ext = "lib"
     dll_ext = "dll"
+    build_version = get_build_version()
+    toolset = "vc%d" % (int(build_version) * 10)
 else:
     lib_ext = "so"
     dll_ext = "so"
+    toolset = None
     
 class BuildWithCMake(setuptools.Command):
     user_options = [ 
@@ -64,9 +67,15 @@ class BuildWithCMake(setuptools.Command):
             path = r"C:\Program Files (x86)\CMake\bin"
             if os.path.exists(path):
                 self.cmake = os.path.join(path, "cmake")
-            else:
-                raise distutils.command.build.DistutilsOptionError(
-                "CMake is not installed in the default location and --cmake not specified")
+	    else:
+	        for path in os.environ["PATH"].split(";"):
+		    cmake_path = os.path.join(path, "cmake.exe")
+		    if os.path.exists(cmake_path):
+		        self.cmake = cmake_path
+			break
+		else:
+                    raise distutils.command.build.DistutilsOptionError(
+                        "CMake is not installed in the default location and --cmake not specified")
         elif self.cmake is None:
             self.cmake = "cmake"
         if self.source_dir is None:
@@ -461,8 +470,7 @@ class BuildBoost(setuptools.Command):
             bootstrap_script = "boostrap.sh"
         args = [bootstrap_script]
         if is_win:
-            build_version = get_build_version()
-            self.toolset = "vc%d" % (int(build_version))
+	    self.toolset = toolset
             args.append(self.toolset)
         else:
             self.toolset = None
@@ -597,8 +605,7 @@ class BuildVigra(BuildWithCMake):
             #
             self.extra_cmake_options.append(
                 '"-DBOOST_ROOT:PATH=%s"' % os.path.abspath(self.boost_src))
-            vcver = int(get_build_version()) * 10
-            boost_libname = "boost_python-vc%d-mt-1_53.lib" % vcver
+            boost_libname = "boost_python-%s-mt-1_53.lib" % toolset
             if self.boost_library_dir is None:
                 self.boost_library_dir = os.path.abspath(os.path.join(
                     self.boost_install_dir, "lib"))
@@ -615,6 +622,8 @@ class BuildVigra(BuildWithCMake):
                 self.boost_include_dir = os.path.abspath(self.boost_src)
             self.extra_cmake_options.append(
                 '"-DBoost_INCLUDE_DIR:PATH=%s"' % self.boost_include_dir)
+	    self.extra_cmake_options.append(
+	        r'"-DCMAKE_CXX_FLAGS:STRING=/EHsc"')
         
     def rewrite_windows_setup(self, setup_directory):
         #
@@ -783,7 +792,22 @@ def patch_vigra(cmd):
     lines.insert(len(lines) - 2, "#include <cstddef>\n")
     with open(config_hxx_path, "w") as fd:
         fd.write("".join(lines))
-        
+    
+    #
+    # Put the BOOST toolset def in
+    #
+    cmakelists_path = os.path.join(cmd.source_dir, "CMakeLists.txt")
+    if is_win:
+	with open(cmakelists_path, "r") as fd:
+	    lines = fd.readlines()
+        with open(cmakelists_path, "w") as fd:
+	    first = True
+	    for line in lines:
+		fd.write(line)
+		if re.search(r"IF\s\(MSVC\)", line) and first:
+		    fd.write('ADD_DEFINITIONS(-DBOOST_LIB_TOOLSET=\\"%s\\")\n' %
+		             toolset)
+		    first = False
     
 try:
     import h5py
