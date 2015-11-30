@@ -2,3 +2,5 @@ numpy
 Cython
 requests
 setuptools
+PyOpenGL
+PyOpenGL-accelerate
