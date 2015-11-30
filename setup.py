@@ -834,6 +834,7 @@ def patch_ilastik(cmd):
     '''Ilastik source patches
     
     ilastik.gui.volumeeditor - remove unused import of qimage2ndarray.qimageview
+    setup - search for .ui files everywhere under "ilastik"
     '''
     path = os.path.join(cmd.source_dir, "ilastik", "gui", "volumeeditor.py")
     lines = filter(
@@ -841,6 +842,15 @@ def patch_ilastik(cmd):
         open(path, "r").readlines())
     with open(path, "w") as fd:
 	for line in lines:
+	    fd.write(line)
+	    
+    path = os.path.join(cmd.source_dir, "setup.py")
+    lines = open(path, "r").readlines()
+    pattern = r'''\s*rootdir\s*=\s*['"]ilastik/gui/['"]'''
+    with open(path, "w") as fd:
+	for line in lines:
+	    if re.search(pattern, line):
+		line = line.replace("ilastik/gui", "ilastik")
 	    fd.write(line)
 
 try:
