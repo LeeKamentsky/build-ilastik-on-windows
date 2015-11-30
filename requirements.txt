@@ -4,3 +4,4 @@ requests
 setuptools
 PyOpenGL
 PyOpenGL-accelerate
+qimage2ndarray
