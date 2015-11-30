@@ -829,7 +829,20 @@ def patch_vigra(cmd):
 		    fd.write('ADD_DEFINITIONS(-DBOOST_LIB_TOOLSET=\\"%s\\")\n' %
 		             toolset)
 		    first = False
+
+def patch_ilastik(cmd):
+    '''Ilastik source patches
     
+    ilastik.gui.volumeeditor - remove unused import of qimage2ndarray.qimageview
+    '''
+    path = os.path.join(cmd.source_dir, "ilastik", "gui", "volumeeditor.py")
+    lines = filter(
+        (lambda l:l.find("qimage2ndarray.qimageview") < 0),
+        open(path, "r").readlines())
+    with open(path, "w") as fd:
+	for line in lines:
+	    fd.write(line)
+
 try:
     import h5py
     libhdf5_version = h5py.version.hdf5_version
@@ -921,7 +934,8 @@ try:
                 },
             'fetch_ilastik': {
                 'version': 'v0.5.05',
-                'url':"http://cellprofiler.org/linux/SOURCES/{full_name}.tar.gz"
+                'url':"http://cellprofiler.org/linux/SOURCES/{full_name}.tar.gz",
+                'post_fetch': patch_ilastik
                 }
         }
     )
