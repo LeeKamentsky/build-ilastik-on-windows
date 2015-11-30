@@ -846,11 +846,22 @@ def patch_ilastik(cmd):
 	    
     path = os.path.join(cmd.source_dir, "setup.py")
     lines = open(path, "r").readlines()
-    pattern = r'''\s*rootdir\s*=\s*['"]ilastik/gui/['"]'''
+    pattern = r"""\s+package_data\s*=\s*{[^}]+}"""
     with open(path, "w") as fd:
 	for line in lines:
-	    if re.search(pattern, line):
-		line = line.replace("ilastik/gui", "ilastik")
+	    if line.startswith("setup("):
+		fd.write("""
+modulesFileList = []
+rootdir = 'ilastik/modules'
+for root, subfolders, files in os.walk(rootdir):
+    for file in files:
+        if '.ui' in file:
+	    modulesFileList.append(os.path.join(root[8:], file))
+""")
+	    elif re.search(pattern, line):
+		index = line.find("}")
+		line = line[:index] + ", 'ilastik.modules' : modulesFileList" +\
+		    line[index:]
 	    fd.write(line)
 
 try:
