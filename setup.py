@@ -852,11 +852,11 @@ def patch_ilastik(cmd):
 	    if line.startswith("setup("):
 		fd.write("""
 modulesFileList = []
-rootdir = 'ilastik/modules'
+rootdir = 'ilastik/modules/'
 for root, subfolders, files in os.walk(rootdir):
     for file in files:
         if '.ui' in file:
-	    modulesFileList.append(os.path.join(root[8:], file))
+	    modulesFileList.append(os.path.join(root[len(rootdir):], file))
 """)
 	    elif re.search(pattern, line):
 		index = line.find("}")
