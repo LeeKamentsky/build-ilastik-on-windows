@@ -6,7 +6,6 @@ import distutils.spawn
 import hashlib
 import os
 import re
-import requests
 import shutil
 import StringIO
 import sys
@@ -150,6 +149,28 @@ class BuildWithCMake(setuptools.Command):
         finally:
             os.chdir(old_dir)
 
+class BuildWithNMake(setuptools.Command):
+    user_options = []
+    def initialize_options(self):
+	self.source_dir = None
+	self.src_command = None
+	self.makefile = None
+	
+    def finalize_options(self):
+	if self.source_dir is None:
+	    self.set_undefined_options(self.src_command,
+	                               ('source_dir', 'source_dir'))
+	if self.makefile is None:
+	    self.makefile = "Makefile"
+    
+    def run(self):
+	old_cwd = os.path.abspath(os.curdir)
+	os.chdir(self.source_dir)
+	try:
+	    self.spawn(["nmake", "-f", self.makefile])
+	finally:
+	    os.chdir(old_cwd)
+	
 class FetchSource(setuptools.Command, object):
     '''Download and untar a tarball or zipfile
     
@@ -171,8 +192,10 @@ class FetchSource(setuptools.Command, object):
           and that the version is tagged.
     unpack_dir - where to unpack the tarball, relative to the build library
                  directory. Defaults to package name
-    source_dir - where the source unpacks to. Defaults to fullname. This should
-                 match the structure of the tarball itself - we do not infer.
+    source_dir - where the source unpacks to. Defaults to fullname.
+    tarball_source_dir - where the tarball unpacks the source. This defaults
+                         to the source directory, but FetchSource will move it
+			 if not.
     post_fetch - a callable object to be run after the source has been downloaded
                  and untarred, e.g. to apply a patch. Called with the command
                  as the single argument
@@ -187,6 +210,7 @@ class FetchSource(setuptools.Command, object):
         ( 'url', None, 'URL to download the package' ),
         ( 'unpack-dir', None, 'Where to unpack the source' ),
         ( 'source-dir', None, 'Where the package will be after unpacking'),
+        ( 'tarball-source-dir', None, 'The top-level directory of the tarball'),
         ( 'post-fetch', None, 'Callable to run after unpacking' ),
         ( 'member-filter', None, 'Function to filter tarball members' )
         ]
@@ -205,6 +229,7 @@ class FetchSource(setuptools.Command, object):
         self.url = None
         self.unpack_dir = None
         self.source_dir = None
+	self.tarball_source_dir = None
         self.post_fetch = None
         self.member_filter = None
         
@@ -245,8 +270,11 @@ class FetchSource(setuptools.Command, object):
                 self.unpack_dir, self.full_name)
         else:
             self.source_dir = self.source_dir.format(**self.__dict__)
+	if self.tarball_source_dir is None:
+	    self.tarball_source_dir = self.source_dir
         
     def run(self):
+	import requests
         self.announce("Fetching " + self.url)
         up = urlparse.urlparse(self.url)
         target = os.path.join(os.path.dirname(self.source_dir),
@@ -278,53 +306,15 @@ class FetchSource(setuptools.Command, object):
                     return name_filter(member.name)
                 members = filter(filter_fn, tarball.getmembers())
         tarball.extractall(self.unpack_dir, members = members)
+	tarball.close()
+	tarball_source_dir = os.path.join(
+	    self.unpack_dir, self.tarball_source_dir)
+	if self.source_dir != self.tarball_source_dir:
+	    if os.path.isdir(self.source_dir):
+		shutil.rmtree(self.source_dir)
+	    shutil.move(tarball_source_dir, self.source_dir)
         if self.post_fetch is not None:
             self.post_fetch(self)
-        
-class FetchFFTWWindowsBinaries(setuptools.Command):
-    user_options = [ ("url=", None, "URL of FFTW Windows binaries"),
-                     ("fftw-version", None, "Version of FFTW to use"),
-                     ("install-dir=", None, "Install directory for binaries")]
-    command_name = "fetch_fftw_binaries"
-    
-    def initialize_options(self):
-        self.url = None
-        self.build_lib = None
-        self.install_dir = None
-        self.fftw_version = None
-        
-    def finalize_options(self):
-        self.set_undefined_options(
-            "build", ('build_lib', 'build_lib'))
-        if self.fftw_version is None:
-            self.fftw_version = "3.3.2"
-        if self.url is None:
-            self.url = "ftp://ftp.fftw.org/pub/fftw/fftw-%s-dll64.zip" % \
-                self.fftw_version
-        if self.install_dir is None:
-            self.install_dir = os.path.join(
-                self.build_lib, "fftw", "install", 
-                "fftw-%s" % self.fftw_version)
-    def run(self):
-        self.announce("Fetching FFTW binaries")
-        request = urllib2.urlopen(self.url)
-        fd = StringIO.StringIO()
-        while True:
-            b = request.read()
-            if b is None or len(b) == 0:
-                break
-            fd.write(b)
-        fd.seek(0)
-        fftw_zip = zipfile.ZipFile(fd)
-        fftw_zip.extractall(self.install_dir)
-        #
-        # Have to build libfftw-3.3.lib and others
-        #
-        for libname in ("libfftw3-3", "libfftw3f-3", "libfftw3l-3"):
-            args = ["lib", "/machine:x64", 
-                    "/def:%s.def" % os.path.join(self.install_dir, libname),
-                    "/out:%s.lib" % os.path.join(self.install_dir, libname)]
-            self.spawn(args)
         
 class BuildLibhdf5(BuildWithCMake):
     def initialize_options(self):
@@ -508,6 +498,41 @@ class BuildBoost(setuptools.Command):
         finally:
             os.chdir(old_cwd)
             
+class FetchVigra(FetchSource):
+    def initialize_options(self):
+	FetchSource.initialize_options(self)
+	self.dependency_dir = None
+	
+    def finalize_options(self):
+	FetchSource.finalize_options(self)
+	if self.dependency_dir is None:
+	    self.dependency_dir = os.path.join(
+	        self.source_dir, "..", "dependencies")
+
+class BuildLibpng(BuildWithCMake):
+    
+    def initialize_options(self):
+	BuildWithCMake.initialize_options(self)
+	self.zlib_install_dir = None
+	self.zlib_library = None
+	self.zlib_include_dir = None
+	
+    def finalize_options(self):
+	BuildWithCMake.finalize_options(self)
+	self.set_undefined_options(
+	    'build_zlib', ('install_dir', 'zlib_install_dir'))
+	if self.zlib_library is None:
+	    self.zlib_library = os.path.join(
+	        self.zlib_install_dir, "lib", "zlib."+lib_ext)
+	self.extra_cmake_options.append(
+	    '"-DZLIB_LIBRARY:FILEPATH=%s"' % os.path.abspath(self.zlib_library))
+	if self.zlib_include_dir is None:
+	    self.zlib_include_dir = os.path.join(
+		self.zlib_install_dir, "include")
+	self.extra_cmake_options.append(
+	    '"-DZLIB_INCLUDE_DIR:PATH=%s"' % 
+	    os.path.abspath(self.zlib_include_dir))
+	
 class BuildVigra(BuildWithCMake):
     command_name = 'build_vigra'
     
@@ -524,9 +549,18 @@ class BuildVigra(BuildWithCMake):
         self.szip_install_dir = None
         self.szip_library = None
         self.hdf5_include_dir = None
-        self.fftw_install_dir = None
         self.fftw_include_dir = None
         self.fftw_library = None
+	self.fftw_dll = None
+	self.dependency_install_dir = None
+	self.libtiff_dir = None
+	self.libtiff_library = None
+	self.libtiff_include_dir = None
+	self.jpeg_library = None
+	self.jpeg_dir = None
+	self.libpng_install_dir = None
+	self.png_library = None
+	self.png_include_dir = None
         self.boost_install_dir = None
         self.boost_python_library = None
         self.boost_src = None
@@ -541,20 +575,26 @@ class BuildVigra(BuildWithCMake):
             self.szip_library = os.path.join(
                 self.szip_install_dir, 'lib', 'szip.%s' % lib_ext)
         self.extra_cmake_options.append(
-        '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
+	    '"-DHDF5_SZ_LIBRARY:FILEPATH=%s"' % self.szip_library)
         
         if is_win:
             self.set_undefined_options(
                 'build_zlib', ('install_dir', 'zlib_install_dir'))
             self.set_undefined_options(
                 'build_libhdf5', ('install_dir', 'libhdf5_install_dir'))
+	    self.set_undefined_options(
+	        'build_libpng', ('install_dir', 'libpng_install_dir'))
             self.set_undefined_options(
                 'build_boost', 
                 ('install_dir', 'boost_install_dir'),
                 ('boost_src', 'boost_src'))
+	    self.set_undefined_options(
+	        'build_jpeg', ('source_dir', 'jpeg_dir'))
+	    self.set_undefined_options(
+	        'build_tiff', ('source_dir', 'libtiff_dir'))
             self.set_undefined_options(
-                'fetch_fftw_binaries', ('source_dir', 'fftw_install_dir'))
-            
+                'fetch_vigra', 
+	        ('dependency_dir', 'dependency_install_dir'))
             if self.zlib_library is None:
                 zlib = 'zlib.' + lib_ext
             self.zlib_library = os.path.join(
@@ -588,18 +628,62 @@ class BuildVigra(BuildWithCMake):
             
             if self.fftw_include_dir is None:
                 self.fftw_include_dir = os.path.join(
-                    self.fftw_install_dir)
+                    self.dependency_install_dir, "include")
             self.extra_cmake_options.append(
                 '"-DFFTW3_INCLUDE_DIR:PATH=%s"' % 
-                os.path.abspath(self.fftw_install_dir))
+	        os.path.abspath(self.fftw_include_dir))
             
             if self.fftw_library is None:
-                self.fftw_library = os.path.join(
-                    self.fftw_install_dir, "libfftw3-3.%s" % lib_ext)
+		# Use the precompiled library in lib\win-amd64
+                self.fftw_library = os.path.abspath(os.path.join(
+                    os.path.dirname(__file__), "lib", "win-amd64",
+		    "libfftw.%s" % lib_ext))
             self.extra_cmake_options.append(
-                '"-DFFTW3_LIBRARY:FILEPATH=%s"' % 
-                os.path.abspath(self.fftw_library))
+                '"-DFFTW3_LIBRARY:FILEPATH=%s"' % self.fftw_library)
+	    
+	    if self.fftw_dll is None:
+		self.fftw_dll = os.path.abspath(os.path.join(
+		    os.path.dirname(__file__), "lib", "win-amd64", 
+		    "libfftw.dll"))
+	    
+	    self.extra_cmake_options.append(
+		'"-DJPEG_INCLUDE_DIR:PATH=%s"' % 
+	        os.path.abspath(self.jpeg_dir))
+
+	    if self.jpeg_library is None:
+		self.jpeg_library = os.path.join(
+		self.jpeg_dir, "libjpeg." + lib_ext)
+	    self.extra_cmake_options.append(
+	        '"-DJPEG_LIBRARY:FILEPATH=%s"' %
+	        os.path.abspath(self.jpeg_library))
     
+	    if self.png_include_dir is None:
+		self.png_include_dir = os.path.join(
+		    self.libpng_install_dir, "include")
+	    self.extra_cmake_options.append(
+		'"-DPNG_PNG_INCLUDE_DIR:PATH=%s"' % 
+	        os.path.abspath(self.png_include_dir))
+
+	    if self.png_library is None:
+		self.png_library = os.path.join(
+		self.libpng_install_dir, "lib", "libpng14_static." + lib_ext)
+	    self.extra_cmake_options.append(
+	        '"-DPNG_LIBRARY:FILEPATH=%s"' %
+	        os.path.abspath(self.png_library))
+    
+	    if self.libtiff_include_dir is None:
+		self.libtiff_include_dir = os.path.join(
+		    self.libtiff_dir, "libtiff")
+	    self.extra_cmake_options.append(
+		'"-DTIFF_INCLUDE_DIR:PATH=%s"' % 
+	        os.path.abspath(self.libtiff_include_dir))
+
+	    if self.libtiff_library is None:
+		self.libtiff_library = os.path.join(
+		self.libtiff_dir, "libtiff", "libtiff." + lib_ext)
+	    self.extra_cmake_options.append(
+	        '"-DTIFF_LIBRARY:FILEPATH=%s"' %
+	        os.path.abspath(self.libtiff_library))
             #
             # BOOST configuration
             #
@@ -677,7 +761,6 @@ class BuildVigra(BuildWithCMake):
 	site_packages = distutils.sysconfig.get_python_lib()
 	vigra_target = os.path.join(site_packages, "vigra")
 	boost_python_dll = os.path.splitext(self.boost_python_library)[0]+".dll"
-	fftw_dll = os.path.splitext(self.fftw_library)[0] + ".dll"
 	impex_dll = os.path.join(
 	    self.target_dir, "src", "impex", "vigraimpex.dll")
 	szip_dll = os.path.join(self.szip_install_dir, "bin", "szip.dll")
@@ -685,7 +768,7 @@ class BuildVigra(BuildWithCMake):
 	    os.path.join(self.libhdf5_install_dir, "bin", libname+".dll")
 	    for libname in ("hdf5", "hdf5_hl")]
 	zlib_dll = os.path.join(self.zlib_install_dir, "bin", "zlib.dll")
-	all_dlls = [boost_python_dll, fftw_dll, impex_dll, szip_dll]
+	all_dlls = [boost_python_dll, self.fftw_dll, impex_dll, szip_dll]
 	all_dlls += hdf_dlls
 	all_dlls.append(zlib_dll)
 	for dll_path in all_dlls:
@@ -738,6 +821,12 @@ class BuildIlastik(distutils.command.build.build):
             ('build_zlib', None),
             ('fetch_libhdf5', None),
             ('build_libhdf5', None),
+	    ('fetch_jpeg', None),
+	    ('build_jpeg', None),
+	    ('fetch_libpng', None),
+	    ('build_libpng', None),
+	    ('fetch_tiff', None),
+	    ('build_tiff', None),
             ('fetch_h5py', needs_h5py),
             ('build_h5py', needs_h5py),
             ('fetch_boost', None),
@@ -779,7 +868,12 @@ def patch_szip(cmd):
                 fd.write(line)
         fd.close()
         shutil.copyfile(filename, path)
-
+	
+def patch_jpeg(cmd):
+    '''patch the JPEG library'''
+    cmd.copy_file(os.path.join(cmd.source_dir, "jconfig.vc"),
+                  os.path.join(cmd.source_dir, "jconfig.h"))
+    
 def filter_boost(name):
     '''Filter out the image files in order to reduce the tarball size
     
@@ -787,14 +881,6 @@ def filter_boost(name):
     '''
     return not any([name.lower().endswith(ext) 
                    for ext in (".png", ".html")])
-        
-def build_fftw_libs(cmd):
-    '''Build the Windows .lib files for the FFTW dlls'''
-    for libname in ("libfftw3-3", "libfftw3f-3", "libfftw3l-3"):
-        args = ["lib", "/machine:x64", 
-                "/def:%s.def" % os.path.join(cmd.source_dir, libname),
-                "/out:%s.lib" % os.path.join(cmd.source_dir, libname)]
-        cmd.spawn(args)
         
 def patch_vigra(cmd):
     '''Patch Vigra to deal with future issues
@@ -829,6 +915,12 @@ def patch_vigra(cmd):
 		    fd.write('ADD_DEFINITIONS(-DBOOST_LIB_TOOLSET=\\"%s\\")\n' %
 		             toolset)
 		    first = False
+    #
+    # Unpack the win32 dependencies
+    #
+    tarball = zipfile.ZipFile(
+        os.path.join(cmd.source_dir, "vigra-dependencies-win32-vs8.zip"))
+    tarball.extractall(os.path.dirname(cmd.dependency_dir))
 
 def patch_ilastik(cmd):
     '''Ilastik source patches
@@ -877,10 +969,15 @@ try:
         command_classes[build_class] = BuildWithCMake
     for fetch_command in ('fetch_libhdf5', 'fetch_szip', 'fetch_zlib',
                           'fetch_boost', 'fetch_ilastik', 'fetch_fftw',
-                          'fetch_fftw_binaries', 'fetch_vigra', 'fetch_h5py'):
+                          'fetch_h5py', 'fetch_jpeg', 'fetch_libpng',
+                          'fetch_tiff'):
         command_classes[fetch_command] = FetchSource
     command_classes['build_boost'] = BuildBoost
+    command_classes['build_jpeg'] = BuildWithNMake
     command_classes['build_libhdf5'] = BuildLibhdf5
+    command_classes['build_libpng'] = BuildLibpng
+    command_classes['build_tiff'] = BuildWithNMake
+    command_classes['fetch_vigra'] = FetchVigra
     command_classes['build_vigra'] = BuildVigra
     command_classes['install_ilastik'] = InstallIlastik
     result = setuptools.setup(
@@ -892,6 +989,9 @@ try:
             'build_szip': dict(
                 src_command='fetch_szip',
                 extra_cmake_options = ["-DBUILD_SHARED_LIBS:BOOL=\"1\""]),
+            'build_jpeg': dict(
+                src_command = 'fetch_jpeg',
+                makefile="Makefile.vc"),
             'build_libhdf5': dict(
                 src_command='fetch_libhdf5',
                 extra_cmake_options = [
@@ -906,6 +1006,14 @@ try:
                     '-DZLIB_USE_EXTERNAL:BOOL="0"',
                     '-DCPACK_SOURCE_ZIP:BOOL="0"',
                     "-DBUILD_SHARED_LIBS:BOOL=\"1\""]),
+            'build_libpng': dict(
+                src_command = 'fetch_libpng',
+                extra_cmake_options = [
+                    '-DPNG_NO_STDIO:BOOL="0"'
+                    ]),
+            'build_tiff': dict(
+                src_command = 'fetch_tiff',
+                makefile = "Makefile.vc"),
             'build_vigra': dict(
                 src_command='fetch_vigra',
                 extra_cmake_options = [
@@ -913,6 +1021,20 @@ try:
                     '-DCPACK_SOURCE_7Z:BOOL="0"'],
                 do_install = False
             ),
+            'fetch_jpeg': {
+                'package_name': 'jpeg',
+                'version': '8b',
+                'url': 'http://cellprofiler.org/linux/SOURCES/jpegsrc.v8b.tar.gz',
+                'post_fetch': patch_jpeg
+                },
+            'fetch_libpng': {
+                'version': '1.4.5',
+                'url': 'http://cellprofiler.org/linux/SOURCES/libpng-1.4.5.tar.bz2'
+                },
+            'fetch_tiff': {
+                'version': '3.9.4',
+                'url': 'http://cellprofiler.org/linux/SOURCES/tiff-3.9.4.tar.gz'
+                },
             'fetch_szip': {
                 'version': '2.1',
                 'url': "https://www.hdfgroup.org/ftp/lib-external/{package_name}/{version}/src/{package_name}-{version}.tar.gz",
@@ -940,25 +1062,20 @@ try:
                 'version': '3.2.2',
                 'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}.tar.gz"
                 },
-            'fetch_fftw_binaries': {
-                'package_name': 'fftw',
-                'version': "3.3.2",
-                'url': "ftp://ftp.fftw.org/pub/{package_name}/{package_name}-{version}-dll64.zip",
-                'unpack_dir': '{build_lib}/{package_name}/{full_name}',
-                'source_dir': '{unpack_dir}',
-                'post_fetch': build_fftw_libs
-                },
             'fetch_vigra': {
                 'version': '1.7.1',
-                'url': "http://cellprofiler.org/linux/SOURCES/{package_name}-{version}-src.tar.gz",
+                'url': "https://github.com/LeeKamentsky/vigra-ilastik-05/archive/Version-1-7-1.tar.gz",
+                'tarball_source_dir': 'vigra-ilastik-05-Version-1-7-1',
                 'post_fetch': patch_vigra
                 },
             'fetch_ilastik': {
                 'version': 'v0.5.05',
-                'url':"http://cellprofiler.org/linux/SOURCES/{full_name}.tar.gz",
-                'post_fetch': patch_ilastik
+                'url':"https://github.com/LeeKamentsky/ilastik-0.5/archive/cellprofiler/master.tar.gz",
+                'tarball_source_dir': 'ilastik-0.5-cellprofiler-master',
+                #'post_fetch': patch_ilastik
                 }
-        }
+        },
+        setup_requires = ["requests"]
     )
 except:
     import traceback
