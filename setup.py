@@ -830,8 +830,7 @@ class BuildIlastik(distutils.command.build.build):
             ('fetch_h5py', needs_h5py),
             ('build_h5py', needs_h5py),
             ('fetch_boost', None),
-            ('build_boost', None),
-            ('fetch_fftw_binaries', None)]
+            ('build_boost', None)]
     sub_commands += [
         ('fetch_vigra', None),
         ('build_vigra', None),
