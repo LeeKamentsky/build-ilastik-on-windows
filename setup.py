@@ -595,6 +595,18 @@ class BuildVigra(BuildWithCMake):
             self.set_undefined_options(
                 'fetch_vigra', 
 	        ('dependency_dir', 'dependency_install_dir'))
+	    self.extra_cmake_options.append(
+		'"-DJPEG_INCLUDE_DIR:PATH=%s"' % 
+	        os.path.abspath(self.jpeg_dir))
+
+	    if self.jpeg_library is None:
+		self.jpeg_library = os.path.join(
+		self.jpeg_dir, "libjpeg." + lib_ext)
+
+	    self.extra_cmake_options.append(
+	        '"-DJPEG_LIBRARY:FILEPATH=%s"' %
+	        os.path.abspath(self.jpeg_library))
+    
             if self.zlib_library is None:
                 zlib = 'zlib.' + lib_ext
             self.zlib_library = os.path.join(
@@ -629,34 +641,28 @@ class BuildVigra(BuildWithCMake):
             if self.fftw_include_dir is None:
                 self.fftw_include_dir = os.path.join(
                     self.dependency_install_dir, "include")
-            self.extra_cmake_options.append(
-                '"-DFFTW3_INCLUDE_DIR:PATH=%s"' % 
-	        os.path.abspath(self.fftw_include_dir))
-            
             if self.fftw_library is None:
 		# Use the precompiled library in lib\win-amd64
                 self.fftw_library = os.path.abspath(os.path.join(
                     os.path.dirname(__file__), "lib", "win-amd64",
 		    "libfftw.%s" % lib_ext))
-            self.extra_cmake_options.append(
-                '"-DFFTW3_LIBRARY:FILEPATH=%s"' % self.fftw_library)
-	    
 	    if self.fftw_dll is None:
 		self.fftw_dll = os.path.abspath(os.path.join(
 		    os.path.dirname(__file__), "lib", "win-amd64", 
 		    "libfftw.dll"))
-	    
-	    self.extra_cmake_options.append(
-		'"-DJPEG_INCLUDE_DIR:PATH=%s"' % 
-	        os.path.abspath(self.jpeg_dir))
 
-	    if self.jpeg_library is None:
-		self.jpeg_library = os.path.join(
-		self.jpeg_dir, "libjpeg." + lib_ext)
-	    self.extra_cmake_options.append(
-	        '"-DJPEG_LIBRARY:FILEPATH=%s"' %
-	        os.path.abspath(self.jpeg_library))
-    
+	    if os.path.exists(self.fftw_library):
+		self.extra_cmake_options.append(
+		    '"-DFFTW3_INCLUDE_DIR:PATH=%s"' % 
+		    os.path.abspath(self.fftw_include_dir))
+	    
+		self.extra_cmake_options.append(
+		    '"-DFFTW3_LIBRARY:FILEPATH=%s"' % self.fftw_library)
+	    else:
+		self.announce("Building without vigra.fourier support", 3)
+		self.announce("To build with vigra.fourier support, obtain libfftw.dll", 3)
+		self.announce("libfftw is licensed under the GPL", 3)
+
 	    if self.png_include_dir is None:
 		self.png_include_dir = os.path.join(
 		    self.libpng_install_dir, "include")
@@ -709,45 +715,9 @@ class BuildVigra(BuildWithCMake):
 	    self.extra_cmake_options.append(
 	        r'"-DCMAKE_CXX_FLAGS:STRING=/EHsc"')
         
-    def rewrite_windows_setup(self, setup_directory):
-        #
-        # Vigra's CMake looks like it confuses .lib and .dll files
-        # Or maybe I am setting things up wrong
-        # Rewrite setup.py
-        #
-        setup_path = os.path.join(setup_directory, "setup.py")
-        with open(setup_path, "r") as fd:
-            lines = fd.readlines()
-        with open(setup_path, "w") as fd:
-            state = 'before'
-            for line in lines:
-                if state == 'before' and line.startswith('dlls = ['):
-                    state = 'during'
-                if state == 'during':
-                    line = line\
-                        .replace('/lib/', '/bin/')\
-                        .replace('.lib', '.dll')\
-                        .replace('/build/bin/', '/build/lib/')\
-                        .replace('/bin/boost_python', '/lib/boost_python')
-                    if line.strip().endswith("]"):
-                        state = 'whereisctypes'
-                if state == 'whereisctypes':
-                    # Get rid of the search using ctypes
-                    index = line.find('ctypes.util.find')
-                    if index >= 0:
-                        line = line[:index] + "d\n"
-                        state = 'no-pyqt'
-                if state == 'no-pyqt':
-                    index = line.find(", 'vigra.pyqt'")
-                    if index > 0:
-                        line = line[:index] + line.strip()[-2:] + "\n"
-                fd.write(line)
-        
     def run(self):
         BuildWithCMake.run(self)
         setup_directory = os.path.abspath(os.path.join(self.target_dir, "vigranumpy"))
-        #if is_win:
-        #    self.rewrite_windows_setup(setup_directory)
         old_cwd = os.path.abspath(os.curdir)
         os.chdir(setup_directory)
         try:
@@ -768,9 +738,11 @@ class BuildVigra(BuildWithCMake):
 	    os.path.join(self.libhdf5_install_dir, "bin", libname+".dll")
 	    for libname in ("hdf5", "hdf5_hl")]
 	zlib_dll = os.path.join(self.zlib_install_dir, "bin", "zlib.dll")
-	all_dlls = [boost_python_dll, self.fftw_dll, impex_dll, szip_dll]
+	all_dlls = [boost_python_dll, impex_dll, szip_dll]
 	all_dlls += hdf_dlls
 	all_dlls.append(zlib_dll)
+	if os.path.exists(self.fftw_dll):
+	    all_dlls.append(self.fftw_dll)
 	for dll_path in all_dlls:
 	    filename = os.path.split(dll_path)[1]
 	    self.copy_file(dll_path, os.path.join(vigra_target, filename))
