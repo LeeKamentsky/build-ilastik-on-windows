@@ -461,7 +461,7 @@ class BuildBoost(setuptools.Command):
         args = [bootstrap_script]
         if is_win:
 	    self.toolset = toolset
-            args.append(self.toolset)
+            #args.append(self.toolset)
         else:
             self.toolset = None
         self.spawn(args)
@@ -475,7 +475,7 @@ class BuildBoost(setuptools.Command):
             def fixpath(path):
                 path = path.replace("\\", "/")
                 return path
-            libs_path = fixpath(get_config_var('LIBDIR'))
+            libs_path = fixpath(os.path.join(get_config_var("prefix"), "libs"))
             python_path = fixpath(sys.executable)
             include_path = fixpath(get_python_inc())
             project_config_path = os.path.join(
