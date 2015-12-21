@@ -461,7 +461,8 @@ class BuildBoost(setuptools.Command):
         args = [bootstrap_script]
         if is_win:
 	    self.toolset = toolset
-            #args.append(self.toolset)
+	    # vc90 -> vc9, vc100 -> vc10
+            args.append(self.toolset[:-1])
         else:
             self.toolset = None
         self.spawn(args)
